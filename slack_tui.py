@@ -10,13 +10,18 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import (Button, Footer, Header, Label, ListItem, ListView,
                              Select)
 
+from slacktui.config import load_config
 from slacktui.database import load_channels, load_messages
+from slacktui.files import get_file_data
 
 
 class FileButton(Button):
 
-    def __init__(self, *args, **kwds):
+    file_id = None
+
+    def __init__(self, *args, file_id=None, **kwds):
         super().__init__(*args, **kwds)
+        self.file_id = file_id
 
 
 class SlackApp(App):
@@ -29,6 +34,7 @@ class SlackApp(App):
         ("d", "toggle_dark", "Toggle dark mode"),
     ]
     workspace = os.environ["SLACK_WORKSPACE"]
+    config = None
 
     def compose(self) -> ComposeResult:
         """
@@ -56,7 +62,6 @@ class SlackApp(App):
         listview = self.query_one("#messages")
         listview.clear()
         listview.can_focus_children = True
-        print("Cleared listview.")
         messages = load_messages(self.workspace, event.value)
         list_items = []
         for ts, user, text, files_json in messages:
@@ -77,7 +82,10 @@ class SlackApp(App):
                 files = json.loads(files_json)
                 for file_info in files:
                     button = FileButton(
-                        file_info["title"], classes="file-button", variant="primary"
+                        file_info["title"],
+                        classes="file-button",
+                        variant="primary",
+                        file_id=file_info["id"],
                     )
                     file_buttons.append(button)
                 file_row = Horizontal(*file_buttons, classes="file-buttons")
@@ -93,7 +101,17 @@ class SlackApp(App):
         if len(list_items) > 0:
             listview.index = 0
 
+    @on(FileButton.Pressed)
+    def handle_file_button_pressed(self, event):
+        button = event.button
+        file_id = button.file_id
+        print(f"Pressed button with file ID: {file_id}")
+        get_file_data(self.config, self.workspace, file_id)
+        print("Retrieved file data.")
+
 
 if __name__ == "__main__":
     app = SlackApp()
+    config = load_config(app.workspace)
+    app.config = config
     app.run()

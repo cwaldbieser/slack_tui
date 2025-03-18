@@ -47,7 +47,7 @@ def load_file(workspace, file_id):
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         cursor = conn.cursor()
-        cursor.exeute(sql_load_file, {"file_id": file_id})
+        cursor.execute(sql_load_file, {"file_id": file_id})
         row = cursor.fetchone()
         if row is None:
             return None
@@ -229,6 +229,6 @@ sql_create_files_table = """\
         title TEXT,
         mimetype TEXT,
         data BLOB,
-        PRIMARY_KEY (id)
+        PRIMARY KEY (id)
     )
     """
