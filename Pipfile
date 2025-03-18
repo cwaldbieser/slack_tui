@@ -1,0 +1,16 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+slack-bolt = "*"
+logzero = "*"
+httpx = "*"
+textual = "*"
+
+[dev-packages]
+textual-dev = "*"
+
+[requires]
+python_version = "3.12"

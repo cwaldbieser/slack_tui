@@ -1,0 +1,40 @@
+
+ListItem {
+    /*height: 15%;*/
+    /*border: solid red;*/
+}
+
+.user-ts {
+    width: 1.5fr;
+    /*border: solid white;*/
+    height: auto;
+    color: $text-secondary;
+    background: $secondary-muted;
+}
+
+.user {
+    padding-right: 1;
+}
+
+.message-text {
+    width: 8.5fr;
+    color: $text-primary;
+    background: $primary-muted;
+    /*height: 100%;*/
+    /*border: solid blue;*/
+}
+
+.message {
+    /*border: solid white;*/
+    border: round $background;
+    height: auto;
+}
+
+.file-button {
+    /*border: inner white;*/
+    margin-top: 1;
+}
+
+.file-buttons {
+    height: auto;
+}
