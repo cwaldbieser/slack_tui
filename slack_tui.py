@@ -64,6 +64,15 @@ class DownloadButton(Button):
         self.filename = filename
 
 
+class MessageListView(ListView):
+
+    def watch_index(self, old_index: int | None, new_index: int | None) -> None:
+        super().watch_index(old_index, new_index)
+        if self._is_valid_index(old_index):
+            old_child = self._nodes[old_index]
+            old_child.can_focus_children = False
+
+
 class SlackApp(App):
     """
     Slack viewer app.
@@ -89,7 +98,7 @@ class SlackApp(App):
         yield Header()
         with Vertical():
             yield Select.from_values(channel_map.keys())
-            yield ListView(id="messages")
+            yield MessageListView(id="messages")
         yield Footer()
 
     def action_toggle_dark(self) -> None:
@@ -145,10 +154,17 @@ class SlackApp(App):
                     classes="message",
                 )
             )
+            list_item.can_focus_children = False
             list_items.append(list_item)
         listview.extend(list_items)
         if len(list_items) > 0:
             listview.index = 0
+
+    @on(ListView.Highlighted)
+    def handle_message_selected(self, event):
+        item = event.item
+        print(f"type of item: {type(item)}")
+        item.can_focus_children = True
 
     @on(Button.Pressed)
     def handle_button_pressed(self, event):
