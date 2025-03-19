@@ -14,6 +14,7 @@ from textual.screen import ModalScreen
 from textual.widgets import (Button, Footer, Header, Label, ListItem, ListView,
                              Select)
 from textual_image.widget import Image as ImageWidget
+from textual.events import Key
 
 from slacktui.config import load_config
 from slacktui.database import load_channels, load_file, load_messages
@@ -41,6 +42,10 @@ class ImageViewScreen(ModalScreen):
         yield self.make_image_widget()
 
     def action_quit(self):
+        self.app.pop_screen()
+
+    @on(Key)
+    def handle_keypress(self, event):
         self.app.pop_screen()
 
 
@@ -71,6 +76,8 @@ class MessageListView(ListView):
         if self._is_valid_index(old_index):
             old_child = self._nodes[old_index]
             old_child.can_focus_children = False
+        new_child = self._nodes[new_index]
+        new_child.can_focus_children = True
 
 
 class SlackApp(App):
@@ -162,9 +169,9 @@ class SlackApp(App):
 
     @on(ListView.Highlighted)
     def handle_message_selected(self, event):
-        item = event.item
-        print(f"type of item: {type(item)}")
-        item.can_focus_children = True
+        # item = event.item
+        # item.can_focus_children = True
+        pass
 
     @on(Button.Pressed)
     def handle_button_pressed(self, event):

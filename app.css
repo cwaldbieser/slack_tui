@@ -38,7 +38,7 @@ ListItem {
 .download-button {
     margin-top: 1;
     min-width: 5;
-    margin-left: 1;
+    margin-right: 1;
 }
 
 .file-buttons {
