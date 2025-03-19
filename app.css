@@ -38,3 +38,21 @@ ListItem {
 .file-buttons {
     height: auto;
 }
+
+ImageViewScreen {
+    align: center middle;
+}
+
+#image-widget {
+    border: outer $primary;
+}
+
+.image-widget-wide {
+    width: auto;
+    height: 75%;
+}
+
+.image-widget-tall {
+    width: 75%;
+    height: auto;
+}

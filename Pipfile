@@ -8,6 +8,8 @@ slack-bolt = "*"
 logzero = "*"
 httpx = "*"
 textual = "*"
+textual-image = {extras = ["textual"], version = "*"}
+pillow = "*"
 
 [dev-packages]
 textual-dev = "*"

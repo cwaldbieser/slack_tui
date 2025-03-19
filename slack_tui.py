@@ -1,18 +1,46 @@
 #! /usr/bin/env python
 
 import datetime
+import io
 import json
 import os
 
+from PIL import Image
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
 from textual.widgets import (Button, Footer, Header, Label, ListItem, ListView,
                              Select)
+from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
 from slacktui.database import load_channels, load_messages
 from slacktui.files import get_file_data
+
+
+class ImageViewScreen(ModalScreen):
+
+    BINDINGS = [
+        ("escape", "quit", "Close image viewer."),
+    ]
+    image_data = None
+
+    def make_image_widget(self):
+        buf = io.BytesIO(self.image_data)
+        pil_image = Image.open(buf)
+        w, h = pil_image.size
+        if w >= h:
+            style_class = "image-widget-wide"
+        else:
+            style_class = "image-wideget-tall"
+        return ImageWidget(pil_image, id="image-widget", classes=style_class)
+
+    def compose(self):
+        yield self.make_image_widget()
+
+    def action_quit(self):
+        self.app.pop_screen()
 
 
 class FileButton(Button):
@@ -106,8 +134,11 @@ class SlackApp(App):
         button = event.button
         file_id = button.file_id
         print(f"Pressed button with file ID: {file_id}")
-        get_file_data(self.config, self.workspace, file_id)
+        file_data = get_file_data(self.config, self.workspace, file_id)
         print("Retrieved file data.")
+        screen = ImageViewScreen()
+        screen.image_data = file_data
+        self.push_screen(screen)
 
 
 if __name__ == "__main__":
