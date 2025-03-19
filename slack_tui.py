@@ -16,7 +16,7 @@ from textual.widgets import (Button, Footer, Header, Label, ListItem, ListView,
 from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
-from slacktui.database import load_channels, load_messages
+from slacktui.database import load_channels, load_file, load_messages
 from slacktui.files import get_file_data
 
 
@@ -161,11 +161,23 @@ class SlackApp(App):
     def handle_file_button_pressed(self, button):
         file_id = button.file_id
         print(f"Pressed file button with file ID: {file_id}")
+        file_info = load_file(self.workspace, file_id)
+        if file_info is None:
+            self.get_file_from_slack(file_id, callback=self.process_file)
+        else:
+            self.process_file(file_info)
+
+    @work(group="file-download", exclusive=True, thread=True)
+    def get_file_from_slack(self, file_id, callback=None):
         file_info = get_file_data(self.config, self.workspace, file_id)
         if file_info is None:
             print(f"Could not retrieve file info for ID: {file_id}.")
             return
         print("Retrieved file data.")
+        if callback is not None:
+            self.call_from_thread(callback, file_info)
+
+    def process_file(self, file_info):
         mimetype = file_info["mimetype"]
         if mimetype in self.image_types:
             file_data = file_info["data"]

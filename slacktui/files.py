@@ -1,13 +1,8 @@
-from slacktui.database import load_file, store_file
+from slacktui.database import store_file
 import httpx
 
 
 def get_file_data(config, workspace, file_id):
-    file_info = load_file(workspace, file_id)
-    if file_info is not None:
-        return file_info
-    # File not in local database.
-    # It must be retrieved.
     user_token = config["oauth"]["user_token"]
     params = {"file": file_id}
     headers = {"Authorization": f"Bearer {user_token}"}
