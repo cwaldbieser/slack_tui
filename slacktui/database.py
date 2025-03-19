@@ -30,7 +30,7 @@ def fetchrows(cursor, num_rows=None, row_wrapper=None):
     """
     if num_rows is None:
         num_rows = cursor.arraysize
-    columns = list(entry[0] for entry in cursor.description)
+    columns = get_columns_from_cursor(cursor)
     while True:
         rows = cursor.fetchmany(num_rows)
         if not rows:
@@ -41,6 +41,21 @@ def fetchrows(cursor, num_rows=None, row_wrapper=None):
             yield row
 
 
+def row2dict(columns, row):
+    """
+    Wrap a tuple row iterator as a dictionary.
+    """
+    d = {}
+    for n, column_name in enumerate(columns):
+        d[column_name] = row[n]
+    return d
+
+
+def get_columns_from_cursor(cursor):
+    columns = list(entry[0] for entry in cursor.description)
+    return columns
+
+
 def load_file(workspace, file_id):
     path = get_db_path(workspace)
     with sqlite3.connect(path) as conn:
@@ -48,10 +63,11 @@ def load_file(workspace, file_id):
         conn.execute("PRAGMA foreign_keys = ON;")
         cursor = conn.cursor()
         cursor.execute(sql_load_file, {"file_id": file_id})
+        columns = get_columns_from_cursor(cursor)
         row = cursor.fetchone()
         if row is None:
             return None
-        return row[0]
+        return row2dict(columns, row)
 
 
 def load_channels(workspace):
@@ -146,7 +162,12 @@ def store_message(workspace, message):
 
 
 sql_load_file = """\
-    SELECT data
+    SELECT
+        timestamp,
+        name,
+        title,
+        mimetype,
+        data
     FROM files
     WHERE id = :file_id
     """

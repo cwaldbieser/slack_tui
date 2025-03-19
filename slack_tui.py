@@ -73,6 +73,7 @@ class SlackApp(App):
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
     ]
+    image_types = frozenset(["image/jpeg", "image/png", "image/gif"])
     workspace = os.environ["SLACK_WORKSPACE"]
     config = None
 
@@ -160,18 +161,28 @@ class SlackApp(App):
     def handle_file_button_pressed(self, button):
         file_id = button.file_id
         print(f"Pressed file button with file ID: {file_id}")
-        file_data = get_file_data(self.config, self.workspace, file_id)
+        file_info = get_file_data(self.config, self.workspace, file_id)
+        if file_info is None:
+            print(f"Could not retrieve file info for ID: {file_id}.")
+            return
         print("Retrieved file data.")
-        screen = ImageViewScreen()
-        screen.image_data = file_data
-        self.push_screen(screen)
+        mimetype = file_info["mimetype"]
+        if mimetype in self.image_types:
+            file_data = file_info["data"]
+            screen = ImageViewScreen()
+            screen.image_data = file_data
+            self.push_screen(screen)
 
     @work(thread=True)
     def handle_dl_button_pressed(self, button):
         file_id = button.file_id
         print(f"Pressed download button with file ID: {file_id}")
-        file_data = get_file_data(self.config, self.workspace, file_id)
+        file_info = get_file_data(self.config, self.workspace, file_id)
+        if file_info is None:
+            print(f"Could not retrieve file info for ID {file_id}.")
+            return
         print("Retrieved file data.")
+        file_data = file_info["data"]
         dl_folder = self.config.get("files", {}).get("download_folder", "~/Downloads")
         dl_folder = Path(dl_folder).expanduser()
         if not dl_folder.is_dir():

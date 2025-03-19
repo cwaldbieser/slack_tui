@@ -3,9 +3,9 @@ import httpx
 
 
 def get_file_data(config, workspace, file_id):
-    data = load_file(workspace, file_id)
-    if data is not None:
-        return data
+    file_info = load_file(workspace, file_id)
+    if file_info is not None:
+        return file_info
     # File not in local database.
     # It must be retrieved.
     user_token = config["oauth"]["user_token"]
@@ -38,4 +38,11 @@ def get_file_data(config, workspace, file_id):
         title=title,
         mimetype=mimetype,
     )
-    return file_data
+    file_info = {
+        "timestamp": timestamp,
+        "name": name,
+        "title": title,
+        "mimetype": mimetype,
+        "data": file_data,
+    }
+    return file_info
