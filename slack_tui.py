@@ -4,9 +4,10 @@ import datetime
 import io
 import json
 import os
+from pathlib import Path
 
 from PIL import Image
-from textual import on
+from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
@@ -50,6 +51,17 @@ class FileButton(Button):
     def __init__(self, *args, file_id=None, **kwds):
         super().__init__(*args, **kwds)
         self.file_id = file_id
+
+
+class DownloadButton(Button):
+
+    file_id = None
+    filename = None
+
+    def __init__(self, *args, file_id=None, filename=None, **kwds):
+        super().__init__(*args, **kwds)
+        self.file_id = file_id
+        self.filename = filename
 
 
 class SlackApp(App):
@@ -109,13 +121,21 @@ class SlackApp(App):
             if files_json is not None:
                 files = json.loads(files_json)
                 for file_info in files:
-                    button = FileButton(
+                    view_button = FileButton(
                         file_info["title"],
                         classes="file-button",
                         variant="primary",
                         file_id=file_info["id"],
                     )
-                    file_buttons.append(button)
+                    file_buttons.append(view_button)
+                    dl_button = DownloadButton(
+                        "\uf019",
+                        classes="download-button",
+                        variant="primary",
+                        file_id=file_info["id"],
+                        filename=file_info["name"],
+                    )
+                    file_buttons.append(dl_button)
                 file_row = Horizontal(*file_buttons, classes="file-buttons")
                 rows.append(file_row)
             list_item = ListItem(
@@ -129,16 +149,49 @@ class SlackApp(App):
         if len(list_items) > 0:
             listview.index = 0
 
-    @on(FileButton.Pressed)
-    def handle_file_button_pressed(self, event):
+    @on(Button.Pressed)
+    def handle_button_pressed(self, event):
         button = event.button
+        if isinstance(button, FileButton):
+            self.handle_file_button_pressed(button)
+        if isinstance(button, DownloadButton):
+            self.handle_dl_button_pressed(button)
+
+    def handle_file_button_pressed(self, button):
         file_id = button.file_id
-        print(f"Pressed button with file ID: {file_id}")
+        print(f"Pressed file button with file ID: {file_id}")
         file_data = get_file_data(self.config, self.workspace, file_id)
         print("Retrieved file data.")
         screen = ImageViewScreen()
         screen.image_data = file_data
         self.push_screen(screen)
+
+    @work(thread=True)
+    def handle_dl_button_pressed(self, button):
+        file_id = button.file_id
+        print(f"Pressed download button with file ID: {file_id}")
+        file_data = get_file_data(self.config, self.workspace, file_id)
+        print("Retrieved file data.")
+        dl_folder = self.config.get("files", {}).get("download_folder", "~/Downloads")
+        dl_folder = Path(dl_folder).expanduser()
+        if not dl_folder.is_dir():
+            print(f"Path {dl_folder} does not exist or is not a folder.")
+            return
+        filename = Path(button.filename)
+        fname = dl_folder / filename
+        n = 0
+        while fname.exists():
+            n += 1
+            if n == 1000:
+                print(
+                    "Could not generate a unique name for "
+                    f"file '{button.filename}' in folder '{dl_folder}'."
+                )
+                return
+            fname = dl_folder / Path(f"{filename.stem}.{n:03}{filename.suffix}")
+        with open(fname, "wb") as f:
+            f.write(file_data)
+        print(f"File written to '{fname}'.")
 
 
 if __name__ == "__main__":

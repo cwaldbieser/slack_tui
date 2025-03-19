@@ -35,6 +35,12 @@ ListItem {
     margin-top: 1;
 }
 
+.download-button {
+    margin-top: 1;
+    min-width: 5;
+    margin-left: 1;
+}
+
 .file-buttons {
     height: auto;
 }
