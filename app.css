@@ -1,9 +1,4 @@
 
-ListItem {
-    /*height: 15%;*/
-    /*border: solid red;*/
-}
-
 .user-ts {
     width: 1.5fr;
     /*border: solid white;*/
@@ -20,7 +15,6 @@ ListItem {
     width: 8.5fr;
     color: $text-primary;
     background: $primary-muted;
-    /*height: 100%;*/
     /*border: solid blue;*/
 }
 
@@ -30,27 +24,28 @@ ListItem {
     height: auto;
 }
 
-.file-button {
-    /*border: inner white;*/
-    margin-top: 1;
-}
-
-.download-button {
-    margin-top: 1;
-    min-width: 5;
+.file-label {
     margin-right: 1;
 }
 
-.file-buttons {
+.file-labels {
     height: auto;
+    background: $primary-muted;
 }
 
 ImageViewScreen {
     align: center middle;
+    layout: vertical;
 }
 
-#image-widget {
+.image-widget {
     border: outer $primary;
+}
+
+.image-caption {
+    /*border: solid blue;*/
+    color: $primary;
+    background: $primary-muted;
 }
 
 .image-widget-wide {

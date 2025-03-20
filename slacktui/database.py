@@ -81,6 +81,34 @@ def load_channels(workspace):
             yield row
 
 
+def load_channel(workspace, channel_id):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        cursor.execute(sql_load_channel, {"channel_id": channel_id})
+        columns = get_columns_from_cursor(cursor)
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return row2dict(columns, row)
+
+
+def load_user(workspace, user_id):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        cursor.execute(sql_load_user, {"user_id": user_id})
+        columns = get_columns_from_cursor(cursor)
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return row2dict(columns, row)
+
+
 def load_messages(workspace, channel):
     path = get_db_path(workspace)
     with sqlite3.connect(path) as conn:
@@ -88,7 +116,7 @@ def load_messages(workspace, channel):
         conn.execute("PRAGMA foreign_keys = ON;")
         cursor = conn.cursor()
         cursor.execute(sql_load_messages, {"channel": channel})
-        for row in fetchrows(cursor):
+        for row in fetchrows(cursor, row_wrapper=row2dict):
             yield row
 
 
@@ -177,8 +205,8 @@ sql_load_messages = """\
     SELECT
         m.ts,
         u.json_blob->>'name' user,
-        m.json_blob->>'text' text,
-        m.json_blob->'files' files_json
+        m.json_blob->'files' files_json,
+        m.json_blob->'$' json_blob
     FROM messages m
         INNER JOIN channels c
             ON m.channel_id = c.id
@@ -194,6 +222,33 @@ sql_load_channels = """\
     FROM channels
     WHERE json_blob->>'is_channel' = 1
     ORDER BY json_blob->>'name'
+    """
+
+sql_load_channel = """\
+    SELECT
+        id,
+        json_blob->>'is_channel' is_channel,
+        json_blob->>'is_group' is_group,
+        json_blob->>'is_im' is_im,
+        json_blob->>'is_mpim' is_mpim,
+        json_blob->>'is_private' is_private,
+        json_blob->>'name' name
+    FROM channels
+    WHERE id = :channel_id
+    """
+
+sql_load_user = """\
+    SELECT
+        id,
+        json_blob->>'deleted' deleted,
+        json_blob->>'name' name,
+        json_blob->>'$.profile.real_name' real_name,
+        json_blob->>'$.profile.display_name' display_name,
+        json_blob->>'tz' tz,
+        json_blob->>'is_admin' is_admin,
+        json_blob->>'is_bot' is_bot
+    FROM users
+    WHERE id = :user_id
     """
 
 sql_insert_file = """\

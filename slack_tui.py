@@ -10,74 +10,89 @@ from PIL import Image
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+# from textual.events import Key
+from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import (Button, Footer, Header, Label, ListItem, ListView,
-                             Select)
+from textual.widgets import (Footer, Header, Label, ListItem, ListView,
+                             LoadingIndicator, Select, Static)
 from textual_image.widget import Image as ImageWidget
-from textual.events import Key
 
 from slacktui.config import load_config
 from slacktui.database import load_channels, load_file, load_messages
 from slacktui.files import get_file_data
+from slacktui.text import format_text_item
 
 
 class ImageViewScreen(ModalScreen):
 
     BINDINGS = [
-        ("escape", "quit", "Close image viewer."),
+        ("escape", "quit", "Close image viewer"),
+        ("left", "prev_image", "Previous image"),
+        ("right", "next_image", "Next image"),
+        ("r", "refresh", "Refresh"),
     ]
-    image_data = None
+    files = None
+    file_index = reactive(0, repaint=False)
 
-    def make_image_widget(self):
-        buf = io.BytesIO(self.image_data)
+    def __init__(self, *args, files=None, **kwds):
+        super().__init__(*args, **kwds)
+        self.files = files
+
+    def make_image_widget(self, image_data):
+        buf = io.BytesIO(image_data)
         pil_image = Image.open(buf)
         w, h = pil_image.size
         if w >= h:
             style_class = "image-widget-wide"
         else:
             style_class = "image-wideget-tall"
-        return ImageWidget(pil_image, id="image-widget", classes=style_class)
+        return ImageWidget(pil_image, classes=f"image-widget {style_class}")
 
     def compose(self):
-        yield self.make_image_widget()
+        yield LoadingIndicator(classes="image-widget")
+
+    def get_image_data(self, file_id):
+        file_info = load_file(self.app.workspace, file_id)
+        if file_info is None:
+            self.app.get_file_from_slack(file_id, callback=self.process_file)
+        else:
+            self.process_file(file_info)
+
+    def process_file(self, file_info):
+        self.query(".image-widget").remove()
+        self.query(".image-caption").remove()
+        file_data = file_info["data"]
+        image_widget = self.make_image_widget(file_data)
+        title = file_info["title"]
+        caption = Label(title, classes="image-caption")
+        self.mount(image_widget)
+        self.mount(caption)
 
     def action_quit(self):
         self.app.pop_screen()
 
-    @on(Key)
-    def handle_keypress(self, event):
-        self.app.pop_screen()
+    def action_prev_image(self):
+        self.file_index = max(0, self.file_index - 1)
+
+    def action_next_image(self):
+        size = len(self.files)
+        self.file_index = min(size - 1, self.file_index + 1)
+
+    def action_refresh(self):
+        self.query(".image-widget").refresh()
+
+    def watch_file_index(self, new_index):
+        file_id = self.files[self.file_index]["id"]
+        self.get_image_data(file_id)
 
 
-class FileButton(Button):
+class MessageListItem(ListItem):
 
-    file_id = None
+    files = None
 
-    def __init__(self, *args, file_id=None, **kwds):
+    def __init__(self, *args, files=None, **kwds):
         super().__init__(*args, **kwds)
-        self.file_id = file_id
-
-
-class DownloadButton(Button):
-
-    file_id = None
-    filename = None
-
-    def __init__(self, *args, file_id=None, filename=None, **kwds):
-        super().__init__(*args, **kwds)
-        self.file_id = file_id
-        self.filename = filename
-
-
-class MessageListView(ListView):
-
-    def watch_index(self, old_index: int | None, new_index: int | None) -> None:
-        super().watch_index(old_index, new_index)
-        if self._is_valid_index(old_index):
-            old_child = self._nodes[old_index]
-            old_child.can_focus_children = False
-        new_child = self._nodes[new_index]
-        new_child.can_focus_children = True
+        self.files = files
 
 
 class SlackApp(App):
@@ -88,6 +103,7 @@ class SlackApp(App):
     CSS_PATH = "app.css"
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
+        ("i", "view_images", "View images"),
     ]
     image_types = frozenset(["image/jpeg", "image/png", "image/gif"])
     workspace = os.environ["SLACK_WORKSPACE"]
@@ -105,7 +121,7 @@ class SlackApp(App):
         yield Header()
         with Vertical():
             yield Select.from_values(channel_map.keys())
-            yield MessageListView(id="messages")
+            yield ListView(id="messages")
         yield Footer()
 
     def action_toggle_dark(self) -> None:
@@ -114,14 +130,26 @@ class SlackApp(App):
             "textual-dark" if self.theme == "textual-light" else "textual-light"
         )
 
+    def action_view_images(self):
+        listview = self.query_one("#messages")
+        if listview.index is not None:
+            listitem = listview.children[listview.index]
+            if listitem.files is None or len(listitem.files) == 0:
+                return
+            screen = ImageViewScreen(files=listitem.files)
+            self.push_screen(screen)
+
     @on(Select.Changed)
     def handle_select(self, event):
         listview = self.query_one("#messages")
         listview.clear()
-        listview.can_focus_children = True
         messages = load_messages(self.workspace, event.value)
         list_items = []
-        for ts, user, text, files_json in messages:
+        for message_info in messages:
+            ts = message_info["ts"]
+            user = message_info["user"]
+            files_json = message_info["files_json"]
+            message = json.loads(message_info["json_blob"])
             formatted_time = datetime.datetime.fromtimestamp(float(ts)).strftime(
                 "%I:%M %p"
             )
@@ -132,63 +160,34 @@ class SlackApp(App):
                 classes="user-ts",
             )
             rows.append(user_ts)
-            message_text = Label(text, classes="message-text")
+            text = format_text_item(self.workspace, message)
+            # print(json.dumps(message, indent=4))
+            # print(text)
+            message_text = Static(text, classes="message-text", markup=True)
             rows.append(message_text)
-            file_buttons = []
+            # file_buttons = []
+            file_labels = []
+            files = None
             if files_json is not None:
                 files = json.loads(files_json)
                 for file_info in files:
-                    view_button = FileButton(
-                        file_info["title"],
-                        classes="file-button",
-                        variant="primary",
-                        file_id=file_info["id"],
+                    file_label = Label(
+                        f"\\[{file_info['title']}]", classes="file-label"
                     )
-                    file_buttons.append(view_button)
-                    dl_button = DownloadButton(
-                        "\uf019",
-                        classes="download-button",
-                        variant="primary",
-                        file_id=file_info["id"],
-                        filename=file_info["name"],
-                    )
-                    file_buttons.append(dl_button)
-                file_row = Horizontal(*file_buttons, classes="file-buttons")
+                    file_labels.append(file_label)
+                file_row = Horizontal(*file_labels, classes="file-labels")
                 rows.append(file_row)
-            list_item = ListItem(
+            list_item = MessageListItem(
                 Vertical(
                     *rows,
                     classes="message",
-                )
+                ),
+                files=files,
             )
-            list_item.can_focus_children = False
             list_items.append(list_item)
         listview.extend(list_items)
         if len(list_items) > 0:
             listview.index = 0
-
-    @on(ListView.Highlighted)
-    def handle_message_selected(self, event):
-        # item = event.item
-        # item.can_focus_children = True
-        pass
-
-    @on(Button.Pressed)
-    def handle_button_pressed(self, event):
-        button = event.button
-        if isinstance(button, FileButton):
-            self.handle_file_button_pressed(button)
-        if isinstance(button, DownloadButton):
-            self.handle_dl_button_pressed(button)
-
-    def handle_file_button_pressed(self, button):
-        file_id = button.file_id
-        print(f"Pressed file button with file ID: {file_id}")
-        file_info = load_file(self.workspace, file_id)
-        if file_info is None:
-            self.get_file_from_slack(file_id, callback=self.process_file)
-        else:
-            self.process_file(file_info)
 
     @work(group="file-download", exclusive=True, thread=True)
     def get_file_from_slack(self, file_id, callback=None):
