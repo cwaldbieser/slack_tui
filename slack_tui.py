@@ -10,16 +10,19 @@ from PIL import Image
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 # from textual.events import Key
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (Footer, Header, Label, ListItem, ListView,
-                             LoadingIndicator, Select, Static)
+                             LoadingIndicator, Select, Static, TextArea)
 from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
-from slacktui.database import load_channels, load_file, load_messages
+from slacktui.database import (load_channels, load_file, load_messages,
+                               store_message)
 from slacktui.files import get_file_data
+from slacktui.messages import get_history_for_channel, post_message
 from slacktui.text import format_text_item
 
 
@@ -95,6 +98,16 @@ class MessageListItem(ListItem):
         self.files = files
 
 
+def ts2id(ts):
+    widget_id = f"msg-{ts.replace(".", "-")}"
+    return widget_id
+
+
+def id2ts(widget_id):
+    ts = widget_id[4:].replace("-", ".")
+    return ts
+
+
 class SlackApp(App):
     """
     Slack viewer app.
@@ -104,10 +117,16 @@ class SlackApp(App):
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
         ("i", "view_images", "View images"),
+        ("shift+enter", "send_message", "Send message"),
+        ("shift+down", "scroll_bottom", "Scroll to bottom"),
     ]
     image_types = frozenset(["image/jpeg", "image/png", "image/gif"])
+    history_sync_days = 7
+    refresh_timer = None
     workspace = os.environ["SLACK_WORKSPACE"]
     config = None
+    channel_map = None
+    channel_id = None
 
     def compose(self) -> ComposeResult:
         """
@@ -120,15 +139,30 @@ class SlackApp(App):
 
         yield Header()
         with Vertical():
-            yield Select.from_values(channel_map.keys())
+            yield Select.from_values(channel_map.keys(), id="channel-select")
             yield ListView(id="messages")
+            yield TextArea(id="composer")
         yield Footer()
+
+    def on_mount(self):
+        self.refresh_timer = self.set_interval(
+            3, self.refresh_messages, name="sync-interval", pause=True
+        )
 
     def action_toggle_dark(self) -> None:
         """An action to toggle dark mode."""
         self.theme = (
             "textual-dark" if self.theme == "textual-light" else "textual-light"
         )
+
+    def action_scroll_bottom(self):
+        listview = self.query_one("#messages")
+        children = listview.children
+        if len(children) == 0:
+            return
+        child = children[-1]
+        listview.scroll_to_widget(child)
+        listview.index = len(children) - 1
 
     def action_view_images(self):
         listview = self.query_one("#messages")
@@ -139,55 +173,129 @@ class SlackApp(App):
             screen = ImageViewScreen(files=listitem.files)
             self.push_screen(screen)
 
+    def action_send_message(self):
+        textarea = self.query_one("#composer")
+        text = textarea.text
+        print(f"Sending message: {text}")
+        post_message(self.config, self.channel_id, text)
+        textarea.clear()
+
     @on(Select.Changed)
-    def handle_select(self, event):
+    async def handle_select(self, event):
+        self.refresh_timer.pause()
         listview = self.query_one("#messages")
-        listview.clear()
+        await listview.clear()
+        self.channel_id = self.channel_map[event.value]
         messages = load_messages(self.workspace, event.value)
         list_items = []
         for message_info in messages:
-            ts = message_info["ts"]
-            user = message_info["user"]
-            files_json = message_info["files_json"]
-            message = json.loads(message_info["json_blob"])
-            formatted_time = datetime.datetime.fromtimestamp(float(ts)).strftime(
-                "%I:%M %p"
-            )
-            rows = []
-            user_ts = Horizontal(
-                Label(user, classes="user"),
-                Label(formatted_time, classes="timestamp"),
-                classes="user-ts",
-            )
-            rows.append(user_ts)
-            text = format_text_item(self.workspace, message)
-            # print(json.dumps(message, indent=4))
-            # print(text)
-            message_text = Static(text, classes="message-text", markup=True)
-            rows.append(message_text)
-            # file_buttons = []
-            file_labels = []
-            files = None
-            if files_json is not None:
-                files = json.loads(files_json)
-                for file_info in files:
-                    file_label = Label(
-                        f"\\[{file_info['title']}]", classes="file-label"
-                    )
-                    file_labels.append(file_label)
-                file_row = Horizontal(*file_labels, classes="file-labels")
-                rows.append(file_row)
-            list_item = MessageListItem(
-                Vertical(
-                    *rows,
-                    classes="message",
-                ),
-                files=files,
-            )
+            list_item = self.create_message_list_item(message_info)
             list_items.append(list_item)
-        listview.extend(list_items)
-        if len(list_items) > 0:
-            listview.index = 0
+        await listview.extend(list_items)
+        self.set_timer(0.5, self.action_scroll_bottom())
+        self.sync_channel_history()
+
+    @work(group="refresh-messages", exclusive=True, thread=True)
+    def refresh_messages(self):
+        try:
+            channel_select = self.query_one("#channel-select")
+        except NoMatches:
+            return
+        channel = channel_select.value
+        if channel == Select.BLANK:
+            return
+        messages = list(load_messages(self.workspace, channel))
+        self.call_from_thread(self.refresh_messages_ui, messages)
+
+    def refresh_messages_ui(self, messages):
+        listview = self.query_one("#messages")
+        orig_index = listview.index
+        list_items = list(listview.children)
+        if orig_index is None or orig_index == len(list_items) - 1:
+            self.app.set_timer(0.5, self.action_scroll_bottom)
+        if len(list_items) == 0:
+            # add all messages
+            print("No list items.  Adding all messages from DB.")
+            list_items = []
+            for message in messages:
+                list_item = self.create_message_list_item(message)
+                listview.append(list_item)
+            self.action_scroll_bottom()
+            return
+        if len(messages) == 0:
+            print("No messages in DB.  Clearing list items.")
+            listview.clear()
+            return
+        list_item_ids = set(id2ts(li.id) for li in list_items)
+        dbmsg_ids = set(m["ts"] for m in messages)
+        # Remove items not in DB
+        not_in_db = list_item_ids - dbmsg_ids
+        indicies_to_remove = []
+        for index, list_item in enumerate(list_items):
+            ts = id2ts(list_item.id)
+            if ts in not_in_db:
+                indicies_to_remove.append(index)
+        listview.remove_items(indicies_to_remove)
+        # Add messages not in list view
+        not_in_lv = dbmsg_ids - list_item_ids
+        for message in messages:
+            ts = message["ts"]
+            if ts in not_in_lv:
+                msg_list_item = self.create_message_list_item(message)
+                listview.append(msg_list_item)
+
+    def create_message_list_item(self, message_info):
+        ts = message_info["ts"]
+        user = message_info["user"]
+        files_json = message_info["files_json"]
+        message = json.loads(message_info["json_blob"])
+        formatted_time = datetime.datetime.fromtimestamp(float(ts)).strftime(
+            "%Y-%m-%d %I:%M %p"
+        )
+        rows = []
+        user_ts = Horizontal(
+            Label(user, classes="user"),
+            Label(formatted_time, classes="timestamp"),
+            classes="user-ts",
+        )
+        rows.append(user_ts)
+        text = format_text_item(self.workspace, message)
+        # print(json.dumps(message, indent=4))
+        # print(text)
+        message_text = Static(text, classes="message-text", markup=True)
+        rows.append(message_text)
+        file_labels = []
+        files = None
+        if files_json is not None:
+            files = json.loads(files_json)
+            for file_info in files:
+                file_label = Label(f"\\[{file_info['title']}]", classes="file-label")
+                file_labels.append(file_label)
+            file_row = Horizontal(*file_labels, classes="file-labels")
+            rows.append(file_row)
+        list_item = MessageListItem(
+            Vertical(
+                *rows,
+                classes="message",
+            ),
+            files=files,
+            id=ts2id(ts),
+        )
+        return list_item
+
+    @work(group="sync-channel", thread=True)
+    def sync_channel_history(self):
+        history = get_history_for_channel(
+            self.config, self.channel_id, self.history_sync_days
+        )
+        for message in history:
+            message["channel"] = self.channel_id
+            store_message(self.workspace, message)
+        print(
+            f"Database synced for {self.history_sync_days} days worth of messages "
+            f"for channel ID {self.channel_id}."
+        )
+        self.refresh_timer.resume()
 
     @work(group="file-download", exclusive=True, thread=True)
     def get_file_from_slack(self, file_id, callback=None):

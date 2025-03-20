@@ -257,7 +257,7 @@ sql_insert_file = """\
     """
 
 sql_insert_message = """\
-    INSERT INTO messages (channel_id, ts, json_blob)
+    INSERT OR REPLACE INTO messages (channel_id, ts, json_blob)
         VALUES (:channel_id, :ts, jsonb(:message_json))
     """
 

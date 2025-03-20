@@ -61,7 +61,7 @@ def main(args):
 
 # Initialize
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Listen to Slack Channels")
+    parser = argparse.ArgumentParser("Store Slack events in local database")
     parser.add_argument("workspace", action="store", help="Slack Workspace")
     args = parser.parse_args()
     init(args)
