@@ -1,5 +1,6 @@
 from rich import inspect
 from rich.markup import escape
+from urllib.parse import quote
 
 from slacktui.database import load_channel, load_user
 
@@ -47,7 +48,7 @@ def process_rich_text_section(workspace, element):
             text = inner_element.get("text", link)
             link = escape(link)
             text = escape(text)
-            markup = f"[hyperlink][link={link}]{text} ({link})[/link][/hyperlink]"
+            markup = f'[u][link="{quote(link)}"]{text} ({link})[/link][/u]'
             parts.append(markup)
         elif elm_type == "emoji":
             emoji = construct_emoji(inner_element)
@@ -100,7 +101,7 @@ def construct_channel(workspace, element):
         channel = channel_id
     else:
         channel = channel_info["name"]
-    return f"[channel]#{escape(channel)}[/channel]"
+    return f"[$text-accent]#{escape(channel)}[/]"
 
 
 def construct_user(workspace, element):
