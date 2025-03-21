@@ -70,11 +70,19 @@ if __name__ == "__main__":
 @app.event("message")
 def handle_message_events(event, say):
     global ws
-    print(json.dumps(event, indent=4))
+    user = event["user"]
+    ts = event["ts"]
+    text = event["text"]
     channel_type = event["channel_type"]
+    channel = event["channel"]
+    print(f"ts:           {ts}")
+    print(f"user ID:      {user}")
+    print(f"channel_type: {channel_type}")
+    print(f"channel ID:   {channel}")
+    print(f"text:         {text}")
     if channel_type == "im":
         pass
-    elif channel_type == "channel":
+    elif channel_type in ("channel", "group"):
         store_message(ws, event)
 
 

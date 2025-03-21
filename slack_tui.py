@@ -177,9 +177,11 @@ class SlackApp(App):
             self.push_screen(screen)
 
     def action_send_message(self):
+        if self.channel_id is None:
+            return
         textarea = self.query_one("#composer")
         text = textarea.text
-        print(f"Sending message: {text}")
+        print(f"Sending message to channel ID {self.channel_id}: {text}")
         post_message(self.config, self.channel_id, text)
         textarea.clear()
 
@@ -188,6 +190,9 @@ class SlackApp(App):
         self.refresh_timer.pause()
         listview = self.query_one("#messages")
         await listview.clear()
+        if event.value == Select.BLANK:
+            self.channel_id = None
+            return
         self.channel_id = self.channel_map[event.value]
         messages = load_messages(self.workspace, event.value)
         list_items = []
