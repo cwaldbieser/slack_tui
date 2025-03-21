@@ -7,8 +7,9 @@ import os
 from hashlib import md5
 from pathlib import Path
 
-import emoji
 from PIL import Image
+import emoji
+from rich.emoji import Emoji
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -26,6 +27,27 @@ from slacktui.database import (load_channels, load_file, load_messages,
 from slacktui.files import get_file_data
 from slacktui.messages import get_history_for_channel, post_message
 from slacktui.text import format_text_item
+
+_REACTION_ALIASES = {
+    "+1": "thumbs_up",
+}
+
+
+def get_emoji_from_code(code):
+    global _REACTION_ALIASES
+    if len(code) == 0:
+        return code
+    if code[0] != ":":
+        code = f":{code}"
+    if code[-1] != ":":
+        code = f"{code}:"
+    symbol = Emoji.replace(code)
+    if symbol != code:
+        return symbol
+    symbol = emoji.emojize(code)
+    if symbol != code:
+        return symbol
+    return _REACTION_ALIASES.get(code, code)
 
 
 class ImageViewScreen(ModalScreen):
@@ -301,7 +323,7 @@ class SlackApp(App):
             for reaction in reactions:
                 react_name = reaction["name"]
                 react_count = reaction["count"]
-                emoji_symbol = emoji.emojize(f":{react_name}:")
+                emoji_symbol = get_emoji_from_code(react_name)
                 symbols.append(f"{emoji_symbol}x{react_count}")
             react_str = " ".join(symbols)
             status_components.append(Static(react_str, classes="reactions"))
