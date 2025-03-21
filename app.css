@@ -15,7 +15,7 @@
     border: solid $primary;
 }
 
-.user-ts {
+.msg-status-bar {
     width: 1.5fr;
     /*border: solid white;*/
     height: auto;
@@ -25,6 +25,10 @@
 
 .user {
     padding-right: 1;
+}
+
+.timestamp {
+    padding-right: 2;
 }
 
 .message-text {

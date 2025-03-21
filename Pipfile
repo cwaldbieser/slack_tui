@@ -10,6 +10,7 @@ httpx = "*"
 textual = "*"
 textual-image = {extras = ["textual"], version = "*"}
 pillow = "*"
+emoji = "*"
 
 [dev-packages]
 textual-dev = "*"

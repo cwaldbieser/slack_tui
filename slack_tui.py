@@ -24,6 +24,7 @@ from slacktui.database import (load_channels, load_file, load_messages,
 from slacktui.files import get_file_data
 from slacktui.messages import get_history_for_channel, post_message
 from slacktui.text import format_text_item
+import emoji
 
 
 class ImageViewScreen(ModalScreen):
@@ -92,10 +93,12 @@ class ImageViewScreen(ModalScreen):
 class MessageListItem(ListItem):
 
     files = None
+    reactions = None
 
-    def __init__(self, *args, files=None, **kwds):
+    def __init__(self, *args, files=None, reactions=None, **kwds):
         super().__init__(*args, **kwds)
         self.files = files
+        self.reactions = reactions
 
 
 def ts2id(ts):
@@ -253,12 +256,25 @@ class SlackApp(App):
             "%Y-%m-%d %I:%M %p"
         )
         rows = []
-        user_ts = Horizontal(
+        status_components = [
             Label(user, classes="user"),
             Label(formatted_time, classes="timestamp"),
-            classes="user-ts",
+        ]
+        reactions = message.get("reactions")
+        if reactions is not None:
+            symbols = []
+            for reaction in reactions:
+                react_name = reaction["name"]
+                react_count = reaction["count"]
+                emoji_symbol = emoji.emojize(f":{react_name}:")
+                symbols.append(f"{emoji_symbol}x{react_count}")
+            react_str = " ".join(symbols)
+            status_components.append(Static(react_str, classes="reactions"))
+        msg_status_bar = Horizontal(
+            *status_components,
+            classes="msg-status-bar",
         )
-        rows.append(user_ts)
+        rows.append(msg_status_bar)
         text = format_text_item(self.workspace, message)
         # print(json.dumps(message, indent=4))
         # print(text)
@@ -279,6 +295,7 @@ class SlackApp(App):
                 classes="message",
             ),
             files=files,
+            reactions=reactions,
             id=ts2id(ts),
         )
         return list_item
