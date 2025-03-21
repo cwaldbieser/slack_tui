@@ -112,8 +112,8 @@ def construct_user(workspace, element):
     if user_info is None:
         username = user_id
     else:
-        username = user_info["name"]
-    return f"[user]@{escape(username)}[/user]"
+        username = user_info["display_name"]
+    return f"[$text-accent]@{escape(username)}[/]"
 
 
 def construct_emoji(element):
