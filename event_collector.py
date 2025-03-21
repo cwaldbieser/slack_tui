@@ -10,8 +10,8 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from slacktui.channel import query_channels
 from slacktui.config import load_config
-from slacktui.database import (add_reaction, init_db, store_channels,
-                               store_message, store_users)
+from slacktui.database import (add_reaction, init_db, remove_reaction,
+                               store_channels, store_message, store_users)
 from slacktui.user import query_users
 
 app = None
@@ -104,7 +104,17 @@ def handle_reaction_added_events(event):
 
 @app.event("reaction_removed")
 def handle_all(event, say):
-    print(json.dumps(event, indent=4))
+    reaction = event["reaction"]
+    item_type = event["item"]["type"]
+    channel = event["item"]["channel"]
+    ts = event["item"]["ts"]
+    print(f"reaction removed: {reaction}")
+    print(f"item_type:      {item_type}")
+    print(f"channel ID:     {channel}")
+    print(f"ts:             {ts}")
+    print("")
+    if item_type == "message":
+        remove_reaction(ws, event)
 
 
 @app.event("file_shared")
