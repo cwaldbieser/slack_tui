@@ -189,6 +189,39 @@ def store_message(workspace, message):
         conn.commit()
 
 
+def add_reaction(workspace, event):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        ts = event["item"]["ts"]
+        channel_id = event["item"]["channel"]
+        cursor.execute(sql_load_message, {"channel_id": channel_id, "ts": ts})
+        row = cursor.fetchone()
+        if row is None:
+            return
+        message = json.loads(row[0])
+        reactions = message.setdefault("reactions", [])
+        added_reaction = event["reaction"]
+        updated = False
+        for reaction in reactions:
+            name = reaction["name"]
+            if name == added_reaction:
+                count = reaction["count"]
+                reaction["count"] = count + 1
+                updated = True
+                break
+        if not updated:
+            reaction = {
+                "name": added_reaction,
+                "users": [],
+                "count": 1,
+            }
+            reactions.append(reaction)
+    store_message(workspace, message)
+
+
 sql_load_file = """\
     SELECT
         timestamp,
@@ -198,6 +231,15 @@ sql_load_file = """\
         data
     FROM files
     WHERE id = :file_id
+    """
+
+
+sql_load_message = """\
+    SELECT
+        json_blob->'$' json_blob
+    FROM messages
+    WHERE channel_id = :channel_id
+    AND ts = :ts
     """
 
 

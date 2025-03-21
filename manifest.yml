@@ -1,0 +1,43 @@
+display_information:
+  name: TUI Slack bridge
+oauth_config:
+  redirect_urls:
+    - https://localhost:8088/
+  scopes:
+    user:
+      - channels:history
+      - channels:read
+      - channels:write
+      - chat:write
+      - files:read
+      - files:write
+      - groups:history
+      - groups:read
+      - groups:write
+      - im:history
+      - im:read
+      - im:write
+      - links:read
+      - mpim:history
+      - mpim:write
+      - pins:read
+      - reactions:read
+      - users:read
+      - mpim:read
+settings:
+  event_subscriptions:
+    user_events:
+      - file_created
+      - file_shared
+      - link_shared
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+      - reaction_added
+      - reaction_removed
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

@@ -10,8 +10,8 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from slacktui.channel import query_channels
 from slacktui.config import load_config
-from slacktui.database import (init_db, store_channels, store_message,
-                               store_users)
+from slacktui.database import (add_reaction, init_db, store_channels,
+                               store_message, store_users)
 from slacktui.user import query_users
 
 app = None
@@ -80,10 +80,31 @@ def handle_message_events(event, say):
     print(f"channel_type: {channel_type}")
     print(f"channel ID:   {channel}")
     print(f"text:         {text}")
+    print("")
     if channel_type == "im":
         pass
     elif channel_type in ("channel", "group"):
         store_message(ws, event)
+
+
+@app.event("reaction_added")
+def handle_reaction_added_events(event):
+    reaction = event["reaction"]
+    item_type = event["item"]["type"]
+    channel = event["item"]["channel"]
+    ts = event["item"]["ts"]
+    print(f"reaction added: {reaction}")
+    print(f"item_type:      {item_type}")
+    print(f"channel ID:     {channel}")
+    print(f"ts:             {ts}")
+    print("")
+    if item_type == "message":
+        add_reaction(ws, event)
+
+
+@app.event("reaction_removed")
+def handle_all(event, say):
+    print(json.dumps(event, indent=4))
 
 
 @app.event("file_shared")
