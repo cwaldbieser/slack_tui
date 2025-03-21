@@ -4,8 +4,10 @@ import datetime
 import io
 import json
 import os
+from hashlib import md5
 from pathlib import Path
 
+import emoji
 from PIL import Image
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -24,7 +26,6 @@ from slacktui.database import (load_channels, load_file, load_messages,
 from slacktui.files import get_file_data
 from slacktui.messages import get_history_for_channel, post_message
 from slacktui.text import format_text_item
-import emoji
 
 
 class ImageViewScreen(ModalScreen):
@@ -90,15 +91,27 @@ class ImageViewScreen(ModalScreen):
         self.get_image_data(file_id)
 
 
+def compute_message_digest(json_blob):
+    cannonical = json.dumps(json.loads(json_blob), sort_keys=True)
+    hash = md5(cannonical.encode())
+    digest = hash.hexdigest()
+    return digest
+
+
 class MessageListItem(ListItem):
 
     files = None
     reactions = None
+    digest = None
 
-    def __init__(self, *args, files=None, reactions=None, **kwds):
+    def __init__(self, *args, files=None, reactions=None, message=None, **kwds):
         super().__init__(*args, **kwds)
         self.files = files
         self.reactions = reactions
+        cannonical = json.dumps(message, sort_keys=True)
+        hash = md5(cannonical.encode())
+        digest = hash.hexdigest()
+        self.digest = digest
 
 
 def ts2id(ts):
@@ -215,7 +228,7 @@ class SlackApp(App):
         messages = list(load_messages(self.workspace, channel))
         self.call_from_thread(self.refresh_messages_ui, messages)
 
-    def refresh_messages_ui(self, messages):
+    async def refresh_messages_ui(self, messages):
         listview = self.query_one("#messages")
         orig_index = listview.index
         list_items = list(listview.children)
@@ -227,22 +240,26 @@ class SlackApp(App):
             list_items = []
             for message in messages:
                 list_item = self.create_message_list_item(message)
-                listview.append(list_item)
+                await listview.append(list_item)
             self.action_scroll_bottom()
             return
         if len(messages) == 0:
             print("No messages in DB.  Clearing list items.")
-            listview.clear()
+            await listview.clear()
             return
-        list_item_ids = set(id2ts(li.id) for li in list_items)
-        dbmsg_ids = set(m["ts"] for m in messages)
+        list_item_id_map = dict(
+            (id2ts(li.id), (n, li.digest)) for n, li in enumerate(list_items)
+        )
+        list_item_ids = set(list_item_id_map.keys())
+        dbmsg_id_map = dict((m["ts"], m) for m in messages)
+        dbmsg_ids = set(dbmsg_id_map.keys())
         # Remove items not in DB
         not_in_db = list_item_ids - dbmsg_ids
         indicies_to_remove = []
         for index, list_item in enumerate(list_items):
             ts = id2ts(list_item.id)
             if ts in not_in_db:
-                indicies_to_remove.append(index)
+                await indicies_to_remove.append(index)
         listview.remove_items(indicies_to_remove)
         # Add messages not in list view
         not_in_lv = dbmsg_ids - list_item_ids
@@ -250,7 +267,20 @@ class SlackApp(App):
             ts = message["ts"]
             if ts in not_in_lv:
                 msg_list_item = self.create_message_list_item(message)
-                listview.append(msg_list_item)
+                await listview.append(msg_list_item)
+        # Determine if any messages already in the list view changed.
+        same_ids = list_item_ids & dbmsg_ids
+        for shared_id in same_ids:
+            # Compute digest of DB message
+            message = dbmsg_id_map[shared_id]
+            computed_digest = compute_message_digest(message["json_blob"])
+            # Compare to digest of list item message
+            pos, stored_digest = list_item_id_map[shared_id]
+            if computed_digest != stored_digest:
+                # Insert new message and remove old message
+                msg_list_item = self.create_message_list_item(message)
+                await listview.pop(pos)
+                await listview.insert(pos, [msg_list_item])
 
     def create_message_list_item(self, message_info):
         ts = message_info["ts"]
@@ -302,6 +332,7 @@ class SlackApp(App):
             files=files,
             reactions=reactions,
             id=ts2id(ts),
+            message=message,
         )
         return list_item
 
