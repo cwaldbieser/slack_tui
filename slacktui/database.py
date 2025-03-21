@@ -252,23 +252,32 @@ sql_load_user = """\
     """
 
 sql_insert_file = """\
-    INSERT OR REPLACE INTO files(id, timestamp, name, title, mimetype, data)
+    INSERT INTO files(id, timestamp, name, title, mimetype, data)
         VALUES(:file_id, :timestamp, :name, :title, :mimetype, :data)
+    ON CONFLICT(id) DO UPDATE SET
+        timestamp = :timestamp,
+        name = :name,
+        title = :title,
+        mimetype = :mimetype,
+        data = :data
     """
 
 sql_insert_message = """\
-    INSERT OR REPLACE INTO messages (channel_id, ts, json_blob)
+    INSERT INTO messages (channel_id, ts, json_blob)
         VALUES (:channel_id, :ts, jsonb(:message_json))
+    ON CONFLICT(channel_id, ts) DO UPDATE SET json_blob = jsonb(:message_json)
     """
 
 sql_insert_user = """\
-    INSERT OR IGNORE INTO users(id, json_blob)
+    INSERT INTO users(id, json_blob)
         VALUES (:user_id, jsonb(:user_json))
+    ON CONFLICT(id) DO UPDATE SET json_blob = jsonb(:user_json)
     """
 
 sql_insert_channel = """\
-    INSERT OR IGNORE INTO channels(id, json_blob)
+    INSERT INTO channels(id, json_blob)
         VALUES (:channel_id, jsonb(:channel_json))
+    ON CONFLICT(id) DO UPDATE SET json_blob = jsonb(:channel_json)
     """
 
 

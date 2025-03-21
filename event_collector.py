@@ -70,7 +70,12 @@ if __name__ == "__main__":
 @app.event("message")
 def handle_message_events(event, say):
     global ws
-    store_message(ws, event)
+    print(json.dumps(event, indent=4))
+    channel_type = event["channel_type"]
+    if channel_type == "im":
+        pass
+    elif channel_type == "channel":
+        store_message(ws, event)
 
 
 @app.event("file_shared")
