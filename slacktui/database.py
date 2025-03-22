@@ -70,13 +70,18 @@ def load_file(workspace, file_id):
         return row2dict(columns, row)
 
 
-def load_channels(workspace):
+def load_channels(workspace, load_dms=False):
+    is_channel = True
+    is_im = False
+    if load_dms:
+        is_channel = False
+        is_im = True
     path = get_db_path(workspace)
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         cursor = conn.cursor()
-        cursor.execute(sql_load_channels)
+        cursor.execute(sql_load_channels, {"is_channel": is_channel, "is_im": is_im})
         for row in fetchrows(cursor):
             yield row
 
@@ -109,13 +114,24 @@ def load_user(workspace, user_id):
         return row2dict(columns, row)
 
 
-def load_messages(workspace, channel):
+def load_users(workspace):
     path = get_db_path(workspace)
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         cursor = conn.cursor()
-        cursor.execute(sql_load_messages, {"channel": channel})
+        cursor.execute(sql_load_users)
+        for row in fetchrows(cursor, row_wrapper=row2dict):
+            yield row
+
+
+def load_messages(workspace, channel_id=None):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        cursor.execute(sql_load_messages, {"channel_id": channel_id})
         for row in fetchrows(cursor, row_wrapper=row2dict):
             yield row
 
@@ -184,7 +200,11 @@ def store_message(workspace, message):
         message_json = json.dumps(message)
         cursor.execute(
             sql_insert_message,
-            {"ts": ts, "channel_id": channel_id, "message_json": message_json},
+            {
+                "ts": ts,
+                "channel_id": channel_id,
+                "message_json": message_json,
+            },
         )
         conn.commit()
 
@@ -250,7 +270,8 @@ def remove_reaction(workspace, event):
                 break
         if updated:
             if count == 0:
-                reactions = reactions[:n] + reactions[n+1:]
+                pos = n + 1
+                reactions = reactions[:n] + reactions[pos:]
             if len(reactions) == 0:
                 del message["reactions"]
             else:
@@ -290,16 +311,26 @@ sql_load_messages = """\
             ON m.channel_id = c.id
         INNER JOIN users u
             ON u.id = m.json_blob->>'user'
-    WHERE c.json_blob->>'name' = :channel
+    WHERE c.id = :channel_id
     ORDER BY m.ts
     """
 
 
 sql_load_channels = """\
-    SELECT id, json_blob->>'name' name
-    FROM channels
-    WHERE json_blob->>'is_channel' = 1
-    ORDER BY json_blob->>'name'
+    SELECT c.id, c.json_blob->>'name' name, c.json_blob->>'user' user_id
+    FROM channels c
+        LEFT OUTER JOIN users u
+            ON c.json_blob->>'user' = u.id
+            AND c.json_blob->>'is_im' = TRUE
+    WHERE (
+        (c.json_blob->>'is_channel' = :is_channel)
+        OR
+        (c.json_blob->>'is_channel' IS NULL AND :is_channel = FALSE)
+    )
+    AND c.json_blob->>'is_im' = :is_im
+    AND COALESCE(u.json_blob->>'deleted', FALSE) = FALSE
+    AND COALESCE(u.json_blob->>'is_bot', FALSE) = FALSE
+    ORDER BY c.json_blob->>'name'
     """
 
 sql_load_channel = """\
@@ -327,6 +358,15 @@ sql_load_user = """\
         json_blob->>'is_bot' is_bot
     FROM users
     WHERE id = :user_id
+    """
+
+sql_load_users = """\
+    SELECT
+        id,
+        json_blob->>'name' name,
+        json_blob->>'$.profile.display_name' display_name
+    FROM users
+    ORDER by json_blob->>'name'
     """
 
 sql_insert_file = """\

@@ -7,8 +7,8 @@ import os
 from hashlib import md5
 from pathlib import Path
 
-from PIL import Image
 import emoji
+from PIL import Image
 from rich.emoji import Emoji
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -17,13 +17,14 @@ from textual.css.query import NoMatches
 # from textual.events import Key
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import (Footer, Header, Label, ListItem, ListView,
-                             LoadingIndicator, Select, Static, TextArea)
+from textual.widgets import (Checkbox, Footer, Header, Label, ListItem,
+                             ListView, LoadingIndicator, Select, Static,
+                             TextArea)
 from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
 from slacktui.database import (load_channels, load_file, load_messages,
-                               store_message)
+                               load_users, store_message)
 from slacktui.files import get_file_data
 from slacktui.messages import get_history_for_channel, post_message
 from slacktui.text import format_text_item
@@ -171,13 +172,21 @@ class SlackApp(App):
         Create child widgets for the app.
         """
         channel_map = {}
-        for id, name in load_channels(self.workspace):
+        for id, name, user_id in load_channels(self.workspace):
             channel_map[name] = id
         self.channel_map = channel_map
-
+        user_map = {}
+        for user_info in load_users(self.workspace):
+            user_id = user_info["id"]
+            username = user_info["name"]
+            display_name = user_info["display_name"]
+            user_map[user_id] = (username, display_name)
+        self.user_map = user_map
         yield Header()
         with Vertical():
-            yield Select.from_values(channel_map.keys(), id="channel-select")
+            with Horizontal():
+                yield Checkbox("DMs", id="dm-checkbox", classes="dm-toggle")
+                yield Select.from_values(channel_map.keys(), id="channel-select")
             yield ListView(id="messages")
             yield TextArea(id="composer")
         yield Footer()
@@ -220,6 +229,21 @@ class SlackApp(App):
         post_message(self.config, self.channel_id, text)
         textarea.clear()
 
+    @on(Checkbox.Changed)
+    def handle_dm_toggle(self, event):
+        channel_select = self.query_one("#channel-select")
+        channel_map = {}
+        is_dm = event.checkbox.value
+        for id, name, user_id in load_channels(self.workspace, load_dms=is_dm):
+            if is_dm:
+                username, display_name = self.user_map[user_id]
+                name = display_name
+            channel_map[name] = id
+        print(f"channel_map: {channel_map}")
+        self.channel_map = channel_map
+        options = [(key, key) for key in channel_map.keys()]
+        channel_select.set_options(options)
+
     @on(Select.Changed)
     async def handle_select(self, event):
         self.refresh_timer.pause()
@@ -229,7 +253,7 @@ class SlackApp(App):
             self.channel_id = None
             return
         self.channel_id = self.channel_map[event.value]
-        messages = load_messages(self.workspace, event.value)
+        messages = load_messages(self.workspace, self.channel_id)
         list_items = []
         for message_info in messages:
             list_item = self.create_message_list_item(message_info)
@@ -247,7 +271,7 @@ class SlackApp(App):
         channel = channel_select.value
         if channel == Select.BLANK:
             return
-        messages = list(load_messages(self.workspace, channel))
+        messages = list(load_messages(self.workspace, self.channel_id))
         self.call_from_thread(self.refresh_messages_ui, messages)
 
     async def refresh_messages_ui(self, messages):
