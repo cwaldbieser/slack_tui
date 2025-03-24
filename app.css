@@ -32,9 +32,10 @@
 }
 
 .message-text {
-    width: 8.5fr;
+    width: 100%;
     color: $text-primary;
     background: $primary-muted;
+    padding-bottom: 1;
     /*border: solid blue;*/
 }
 

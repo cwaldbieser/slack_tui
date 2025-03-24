@@ -4,6 +4,24 @@ import json
 import httpx
 
 
+def message_transform(message):
+    """
+    Transform message into a cannonical form
+    """
+    new_msg = {}
+    attribs = ["user", "type", "ts", "text", "blocks", "channel", "files", "reactions"]
+    for attrib in attribs:
+        value = message.get(attrib)
+        if value is not None:
+            new_msg[attrib] = value
+    blocks = new_msg.get("blocks")
+    if blocks is not None:
+        for block in blocks:
+            if "block_id" in block:
+                del block["block_id"]
+    return new_msg
+
+
 def post_message(config, channel_id, text, thread_ts=None):
     """
     Post a text message to a channel.
@@ -43,7 +61,7 @@ def get_history_for_channel(config, channel_id, days):
         messages = json_response["messages"]
         messages.reverse()
         for message in messages:
-            yield message
+            yield message_transform(message)
 
 
 def page_results(request_func, url, params, headers):

@@ -6,6 +6,7 @@ import json
 import os
 from hashlib import md5
 from pathlib import Path
+import unicodedata
 
 import emoji
 from PIL import Image
@@ -26,7 +27,8 @@ from slacktui.config import load_config
 from slacktui.database import (load_channels, load_file, load_messages,
                                load_users, store_message)
 from slacktui.files import get_file_data
-from slacktui.messages import get_history_for_channel, post_message
+from slacktui.messages import (get_history_for_channel, message_transform,
+                               post_message)
 from slacktui.text import format_text_item
 
 _REACTION_ALIASES = {
@@ -48,6 +50,11 @@ def get_emoji_from_code(code):
     symbol = emoji.emojize(code)
     if symbol != code:
         return symbol
+    try:
+        symbol = unicodedata.lookup(code[1:-1])
+        return symbol
+    except KeyError:
+        pass
     return _REACTION_ALIASES.get(code, code)
 
 
@@ -114,8 +121,8 @@ class ImageViewScreen(ModalScreen):
         self.get_image_data(file_id)
 
 
-def compute_message_digest(json_blob):
-    cannonical = json.dumps(json.loads(json_blob), sort_keys=True)
+def compute_message_digest(message):
+    cannonical = json.dumps(message, sort_keys=True)
     hash = md5(cannonical.encode())
     digest = hash.hexdigest()
     return digest
@@ -131,9 +138,7 @@ class MessageListItem(ListItem):
         super().__init__(*args, **kwds)
         self.files = files
         self.reactions = reactions
-        cannonical = json.dumps(message, sort_keys=True)
-        hash = md5(cannonical.encode())
-        digest = hash.hexdigest()
+        digest = compute_message_digest(message)
         self.digest = digest
 
 
@@ -253,13 +258,17 @@ class SlackApp(App):
             self.channel_id = None
             return
         self.channel_id = self.channel_map[event.value]
-        messages = load_messages(self.workspace, self.channel_id)
+        messages = [
+            message_transform(json.loads(m["json_blob"]))
+            for m in load_messages(self.workspace, self.channel_id)
+        ]
         list_items = []
-        for message_info in messages:
-            list_item = self.create_message_list_item(message_info)
+        for message in messages:
+            list_item = self.create_message_list_item(message)
             list_items.append(list_item)
+            print(f"APPENDED message with digets: {list_item.digest}:\n{json.dumps(message)}")
         await listview.extend(list_items)
-        self.set_timer(0.5, self.action_scroll_bottom())
+        self.action_scroll_bottom()
         self.sync_channel_history()
 
     @work(group="refresh-messages", exclusive=True, thread=True)
@@ -271,15 +280,18 @@ class SlackApp(App):
         channel = channel_select.value
         if channel == Select.BLANK:
             return
-        messages = list(load_messages(self.workspace, self.channel_id))
+        messages = list(
+            message_transform(json.loads(m["json_blob"]))
+            for m in load_messages(self.workspace, self.channel_id)
+        )
         self.call_from_thread(self.refresh_messages_ui, messages)
 
     async def refresh_messages_ui(self, messages):
         listview = self.query_one("#messages")
         orig_index = listview.index
         list_items = list(listview.children)
-        if orig_index is None or orig_index == len(list_items) - 1:
-            self.app.set_timer(0.5, self.action_scroll_bottom)
+        # if orig_index is None or orig_index == len(list_items) - 1:
+        #     self.app.set_timer(0.5, self.action_scroll_bottom)
         if len(list_items) == 0:
             # add all messages
             print("No list items.  Adding all messages from DB.")
@@ -319,20 +331,24 @@ class SlackApp(App):
         for shared_id in same_ids:
             # Compute digest of DB message
             message = dbmsg_id_map[shared_id]
-            computed_digest = compute_message_digest(message["json_blob"])
+            computed_digest = compute_message_digest(message)
             # Compare to digest of list item message
             pos, stored_digest = list_item_id_map[shared_id]
             if computed_digest != stored_digest:
+                print("DIFF!!!")
+                print(f"stored digest: {stored_digest}\ncomputed digest: {computed_digest}")
+                print(f"DB message:\n{json.dumps(message)}")
                 # Insert new message and remove old message
                 msg_list_item = self.create_message_list_item(message)
                 await listview.pop(pos)
                 await listview.insert(pos, [msg_list_item])
+        if orig_index is None or orig_index == len(list_items) - 1:
+            self.action_scroll_bottom()
 
-    def create_message_list_item(self, message_info):
-        ts = message_info["ts"]
-        user = message_info["user"]
-        files_json = message_info["files_json"]
-        message = json.loads(message_info["json_blob"])
+    def create_message_list_item(self, message):
+        ts = message["ts"]
+        username, user = self.user_map.get(message["user"], (None, None))
+        files = message.get("files")
         formatted_time = datetime.datetime.fromtimestamp(float(ts)).strftime(
             "%Y-%m-%d %I:%M %p"
         )
@@ -363,8 +379,7 @@ class SlackApp(App):
         rows.append(message_text)
         file_labels = []
         files = None
-        if files_json is not None:
-            files = json.loads(files_json)
+        if files is not None:
             for file_info in files:
                 file_label = Label(f"\\[{file_info['title']}]", classes="file-label")
                 file_labels.append(file_label)
