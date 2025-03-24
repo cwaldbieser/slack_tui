@@ -378,7 +378,6 @@ class SlackApp(App):
         message_text = Static(text, classes="message-text", markup=True)
         rows.append(message_text)
         file_labels = []
-        files = None
         if files is not None:
             for file_info in files:
                 file_label = Label(f"\\[{file_info['title']}]", classes="file-label")
