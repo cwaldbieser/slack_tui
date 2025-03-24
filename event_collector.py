@@ -10,8 +10,9 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from slacktui.channel import query_channels
 from slacktui.config import load_config
-from slacktui.database import (add_reaction, init_db, remove_reaction,
-                               store_channels, store_message, store_users)
+from slacktui.database import (add_reaction, init_db, mark_channel_unread,
+                               remove_reaction, store_channels, store_message,
+                               store_users)
 from slacktui.user import query_users
 
 app = None
@@ -85,6 +86,7 @@ def handle_message_events(event, say):
         pass
     elif channel_type in ("channel", "group"):
         store_message(ws, event)
+        mark_channel_unread(ws, channel)
 
 
 @app.event("reaction_added")

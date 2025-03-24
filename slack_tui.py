@@ -4,9 +4,9 @@ import datetime
 import io
 import json
 import os
+import unicodedata
 from hashlib import md5
 from pathlib import Path
-import unicodedata
 
 import emoji
 from PIL import Image
@@ -25,7 +25,7 @@ from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
 from slacktui.database import (load_channels, load_file, load_messages,
-                               load_users, store_message)
+                               load_users, mark_channel_read, store_message)
 from slacktui.files import get_file_data
 from slacktui.messages import (get_history_for_channel, message_transform,
                                post_message)
@@ -177,7 +177,7 @@ class SlackApp(App):
         Create child widgets for the app.
         """
         channel_map = {}
-        for id, name, user_id in load_channels(self.workspace):
+        for id, name, user_id, read in load_channels(self.workspace):
             channel_map[name] = id
         self.channel_map = channel_map
         user_map = {}
@@ -190,8 +190,13 @@ class SlackApp(App):
         yield Header()
         with Vertical():
             with Horizontal():
+                yield Checkbox(
+                    "Unread Only", id="unread-checkbox", classes="unread-toggle"
+                )
                 yield Checkbox("DMs", id="dm-checkbox", classes="dm-toggle")
-                yield Select.from_values(channel_map.keys(), id="channel-select")
+                yield Select.from_values(
+                    channel_map.keys(), id="channel-select", type_to_search=True
+                )
             yield ListView(id="messages")
             yield TextArea(id="composer")
         yield Footer()
@@ -199,6 +204,9 @@ class SlackApp(App):
     def on_mount(self):
         self.refresh_timer = self.set_interval(
             3, self.refresh_messages, name="sync-interval", pause=True
+        )
+        self.channels_timer = self.set_interval(
+            10, self.populate_channels, name="channels-interval", pause=False
         )
 
     def action_toggle_dark(self) -> None:
@@ -234,20 +242,38 @@ class SlackApp(App):
         post_message(self.config, self.channel_id, text)
         textarea.clear()
 
-    @on(Checkbox.Changed)
-    def handle_dm_toggle(self, event):
-        channel_select = self.query_one("#channel-select")
+    def populate_channels(self):
+        try:
+            channel_select = self.query_one("#channel-select")
+        except NoMatches:
+            return
+        if channel_select.expanded:
+            return
+        curr_value = channel_select.value
+        dm_checkbox = self.query_one("#dm-checkbox")
+        unread_checkbox = self.query_one("#unread-checkbox")
         channel_map = {}
-        is_dm = event.checkbox.value
-        for id, name, user_id in load_channels(self.workspace, load_dms=is_dm):
+        is_dm = dm_checkbox.value
+        unread_only = unread_checkbox.value
+        for channel_id, name, user_id, read in load_channels(
+            self.workspace, load_dms=is_dm
+        ):
+            read = bool(read)
             if is_dm:
                 username, display_name = self.user_map[user_id]
                 name = display_name
-            channel_map[name] = id
-        print(f"channel_map: {channel_map}")
+            if unread_only and read and (name != curr_value):
+                continue
+            channel_map[name] = channel_id
         self.channel_map = channel_map
         options = [(key, key) for key in channel_map.keys()]
+        if options == channel_select._options[1:]:
+            return
         channel_select.set_options(options)
+
+    @on(Checkbox.Changed)
+    def handle_checkbox_changed(self, event):
+        self.populate_channels()
 
     @on(Select.Changed)
     async def handle_select(self, event):
@@ -258,6 +284,7 @@ class SlackApp(App):
             self.channel_id = None
             return
         self.channel_id = self.channel_map[event.value]
+        mark_channel_read(self.workspace, self.channel_id)
         messages = [
             message_transform(json.loads(m["json_blob"]))
             for m in load_messages(self.workspace, self.channel_id)
@@ -266,7 +293,9 @@ class SlackApp(App):
         for message in messages:
             list_item = self.create_message_list_item(message)
             list_items.append(list_item)
-            print(f"APPENDED message with digets: {list_item.digest}:\n{json.dumps(message)}")
+            print(
+                f"APPENDED message with digets: {list_item.digest}:\n{json.dumps(message)}"
+            )
         await listview.extend(list_items)
         self.action_scroll_bottom()
         self.sync_channel_history()
@@ -336,7 +365,9 @@ class SlackApp(App):
             pos, stored_digest = list_item_id_map[shared_id]
             if computed_digest != stored_digest:
                 print("DIFF!!!")
-                print(f"stored digest: {stored_digest}\ncomputed digest: {computed_digest}")
+                print(
+                    f"stored digest: {stored_digest}\ncomputed digest: {computed_digest}"
+                )
                 print(f"DB message:\n{json.dumps(message)}")
                 # Insert new message and remove old message
                 msg_list_item = self.create_message_list_item(message)

@@ -206,6 +206,35 @@ def store_message(workspace, message):
                 "message_json": message_json,
             },
         )
+
+
+def mark_channel_read(workspace, channel_id):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        print(f"Marking channel {channel_id} read ...")
+        print(f"SQL: {sql_update_channel_read_status}")
+        read = True
+        cursor.execute(
+            sql_update_channel_read_status, {"channel_id": channel_id, "read": read}
+        )
+        conn.commit()
+
+
+def mark_channel_unread(workspace, channel_id):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        print(f"Marking channel {channel_id} read ...")
+        print(f"SQL: {sql_update_channel_read_status}")
+        read = False
+        cursor.execute(
+            sql_update_channel_read_status, {"channel_id": channel_id, "read": read}
+        )
         conn.commit()
 
 
@@ -279,6 +308,13 @@ def remove_reaction(workspace, event):
     store_message(workspace, message)
 
 
+sql_update_channel_read_status = """\
+    UPDATE channels
+    SET read = :read
+    WHERE id = :channel_id
+    """
+
+
 sql_load_file = """\
     SELECT
         timestamp,
@@ -317,7 +353,7 @@ sql_load_messages = """\
 
 
 sql_load_channels = """\
-    SELECT c.id, c.json_blob->>'name' name, c.json_blob->>'user' user_id
+    SELECT c.id, c.json_blob->>'name' name, c.json_blob->>'user' user_id, c.read
     FROM channels c
         LEFT OUTER JOIN users u
             ON c.json_blob->>'user' = u.id
@@ -393,8 +429,8 @@ sql_insert_user = """\
     """
 
 sql_insert_channel = """\
-    INSERT INTO channels(id, json_blob)
-        VALUES (:channel_id, jsonb(:channel_json))
+    INSERT INTO channels(id, read, json_blob)
+        VALUES (:channel_id, FALSE, jsonb(:channel_json))
     ON CONFLICT(id) DO UPDATE SET json_blob = jsonb(:channel_json)
     """
 
@@ -402,6 +438,7 @@ sql_insert_channel = """\
 sql_create_channels_table = """\
     CREATE TABLE IF NOT EXISTS channels (
         id TEXT,
+        read INTEGER,
         json_blob BLOB,
         PRIMARY KEY (id)
     )
