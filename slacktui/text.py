@@ -1,6 +1,5 @@
 from rich import inspect
 from rich.markup import escape
-from urllib.parse import quote
 
 from slacktui.database import load_channel, load_user
 
@@ -47,8 +46,9 @@ def process_rich_text_section(workspace, element):
                 raise
             text = inner_element.get("text", link)
             link = escape(link)
+            safe_link = link.replace('"', "%22")
             text = escape(text)
-            markup = f'[u][link="{quote(link)}"]{text} ({link})[/link][/u]'
+            markup = f'[link="{safe_link}"]{text} ({link})[/link]'
             parts.append(markup)
         elif elm_type == "emoji":
             emoji = construct_emoji(inner_element)
