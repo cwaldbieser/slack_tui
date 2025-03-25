@@ -21,6 +21,7 @@ def init_db(workspace):
         cursor.execute(sql_create_users_table)
         cursor.execute(sql_create_messages_table)
         cursor.execute(sql_create_files_table)
+        cursor.execute(sql_create_emojis_table)
         conn.commit()
 
 
@@ -470,5 +471,13 @@ sql_create_files_table = """\
         mimetype TEXT,
         data BLOB,
         PRIMARY KEY (id)
+    )
+    """
+
+sql_create_emojis_table = """\
+    CREATE TABLE IF NOT EXISTS emojis (
+        short_code TEXT,
+        unified TEXT,
+        PRIMARY KEY(short_code)
     )
     """

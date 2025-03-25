@@ -2,3 +2,4 @@
 __pycache__
 slack-tui
 event-collector
+store-emojis-to-db
