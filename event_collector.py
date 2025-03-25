@@ -82,9 +82,7 @@ def handle_message_events(event, say):
     print(f"channel ID:   {channel}")
     print(f"text:         {text}")
     print("")
-    if channel_type == "im":
-        pass
-    elif channel_type in ("channel", "group"):
+    if channel_type in ("channel", "group", "im"):
         store_message(ws, event)
         mark_channel_unread(ws, channel)
 
