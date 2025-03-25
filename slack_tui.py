@@ -47,7 +47,7 @@ def get_emoji_from_code(code):
     symbol = Emoji.replace(code)
     if symbol != code:
         return symbol
-    symbol = emoji.emojize(code)
+    symbol = emoji.emojize(code, language="alias")
     if symbol != code:
         return symbol
     try:
