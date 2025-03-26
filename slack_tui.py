@@ -13,19 +13,20 @@ from PIL import Image
 from rich.emoji import Emoji
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 # from textual.events import Key
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import (Checkbox, Footer, Header, Label, ListItem,
+from textual.widgets import (Button, Checkbox, Footer, Header, Label, ListItem,
                              ListView, LoadingIndicator, Select, Static,
                              TextArea)
 from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
-from slacktui.database import (load_channels, load_file, load_messages,
-                               load_users, mark_channel_read, store_message)
+from slacktui.database import (load_channels, load_emojis, load_file,
+                               load_messages, load_users, mark_channel_read,
+                               store_message)
 from slacktui.files import get_file_data
 from slacktui.messages import (get_history_for_channel, message_transform,
                                post_message)
@@ -56,6 +57,38 @@ def get_emoji_from_code(code):
     except KeyError:
         pass
     return _REACTION_ALIASES.get(code, code)
+
+
+class EmojiButton(Button):
+    code = None
+    emoji = None
+
+    def __init__(self, *args, code=None, emoji=None, **kwds):
+        super().__init__(*args, **kwds)
+        self.code = code
+        self.emoji = emoji
+
+
+class ReactionScreen(ModalScreen):
+
+    BINDINGS = [
+        ("escape", "quit", "Close image viewer"),
+    ]
+
+    def compose(self):
+        emoji_info = load_emojis(self.app.workspace, "")
+        with Vertical(id="reaction-panel"):
+            for row in list(emoji_info)[:9]:
+                emoji_symbol = row["emoji"]
+                code = row["short_code"]
+                yield Container(
+                    EmojiButton(emoji_symbol, emoji=emoji_symbol, code=code),
+                    Label(code, classes="reaction-label"),
+                    classes="reaction-container",
+                )
+
+    def action_quit(self):
+        self.app.pop_screen()
 
 
 class ImageViewScreen(ModalScreen):
@@ -163,6 +196,7 @@ class SlackApp(App):
         ("i", "view_images", "View images"),
         ("shift+enter", "send_message", "Send message"),
         ("shift+down", "scroll_bottom", "Scroll to bottom"),
+        ("r", "react", "React to message"),
     ]
     image_types = frozenset(["image/jpeg", "image/png", "image/gif"])
     history_sync_days = 7
@@ -214,6 +248,13 @@ class SlackApp(App):
         self.theme = (
             "textual-dark" if self.theme == "textual-light" else "textual-light"
         )
+
+    def action_react(self):
+        listview = self.query_one("#messages")
+        if listview.index is not None:
+            # listitem = listview.children[listview.index]
+            screen = ReactionScreen()
+            self.push_screen(screen)
 
     def action_scroll_bottom(self):
         listview = self.query_one("#messages")

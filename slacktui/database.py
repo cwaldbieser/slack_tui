@@ -57,6 +57,28 @@ def get_columns_from_cursor(cursor):
     return columns
 
 
+def load_emojis(workspace, ref_code, max_results=9, reverse=False):
+    path = get_db_path(workspace)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        if reverse:
+            cursor.execute(
+                sql_load_prev_emojis, {"ref_code": ref_code, "max_results": max_results}
+            )
+        else:
+            cursor.execute(
+                sql_load_next_emojis, {"ref_code": ref_code, "max_results": max_results}
+            )
+        for row in fetchrows(cursor, row_wrapper=row2dict):
+            parts = row["unified"].split("-")
+            chars = [chr(int(part, 16)) for part in parts]
+            symbol = "".join(chars)
+            row["emoji"] = symbol
+            yield row
+
+
 def load_file(workspace, file_id):
     path = get_db_path(workspace)
     with sqlite3.connect(path) as conn:
@@ -308,6 +330,22 @@ def remove_reaction(workspace, event):
                 message["reactions"] = reactions
     store_message(workspace, message)
 
+
+sql_load_next_emojis = """\
+    SELECT short_code, unified
+    FROM emojis
+    WHERE short_code > :ref_code
+    ORDER BY short_code
+    LIMIT :max_results
+    """
+
+sql_load_prev_emojis = """\
+    SELECT short_code, unified
+    FROM emojis
+    WHERE short_code < :ref_code
+    ORDER BY short_code DESC
+    LIMIT :max_results
+    """
 
 sql_update_channel_read_status = """\
     UPDATE channels
