@@ -57,20 +57,27 @@ def get_columns_from_cursor(cursor):
     return columns
 
 
-def load_emojis(workspace, ref_code, max_results=9, reverse=False):
+def load_emojis(workspace, ref_code, max_results=9, reverse=False, fltr=None):
     path = get_db_path(workspace)
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         cursor = conn.cursor()
+        if fltr is not None:
+            fltr = f"%{fltr}%"
+        else:
+            fltr = "%"
         if reverse:
+            params = {"ref_code": ref_code, "max_results": max_results, "fltr": fltr}
+            print(params)
             cursor.execute(
-                sql_load_prev_emojis, {"ref_code": ref_code, "max_results": max_results}
+                sql_load_prev_emojis,
+                params,
             )
         else:
-            cursor.execute(
-                sql_load_next_emojis, {"ref_code": ref_code, "max_results": max_results}
-            )
+            params = {"ref_code": ref_code, "max_results": max_results, "fltr": fltr}
+            print(params)
+            cursor.execute(sql_load_next_emojis, params)
         for row in fetchrows(cursor, row_wrapper=row2dict):
             parts = row["unified"].split("-")
             chars = [chr(int(part, 16)) for part in parts]
@@ -335,6 +342,7 @@ sql_load_next_emojis = """\
     SELECT short_code, unified
     FROM emojis
     WHERE short_code > :ref_code
+    AND short_code LIKE :fltr
     ORDER BY short_code
     LIMIT :max_results
     """
@@ -343,6 +351,7 @@ sql_load_prev_emojis = """\
     SELECT short_code, unified
     FROM emojis
     WHERE short_code < :ref_code
+    AND short_code LIKE :fltr
     ORDER BY short_code DESC
     LIMIT :max_results
     """

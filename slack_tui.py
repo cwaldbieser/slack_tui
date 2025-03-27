@@ -7,6 +7,7 @@ import os
 import unicodedata
 from hashlib import md5
 from pathlib import Path
+from itertools import zip_longest
 
 import emoji
 from PIL import Image
@@ -18,9 +19,9 @@ from textual.css.query import NoMatches
 # from textual.events import Key
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import (Button, Checkbox, Footer, Header, Label, ListItem,
-                             ListView, LoadingIndicator, Select, Static,
-                             TextArea)
+from textual.widgets import (Button, Checkbox, Footer, Header, Input, Label,
+                             ListItem, ListView, LoadingIndicator, Select,
+                             Static, TextArea)
 from textual_image.widget import Image as ImageWidget
 
 from slacktui.config import load_config
@@ -73,6 +74,8 @@ class ReactionScreen(ModalScreen):
 
     BINDINGS = [
         ("escape", "quit", "Close image viewer"),
+        ("right", "next", "Next"),
+        ("left", "prev", "Previous"),
     ]
 
     def compose(self):
@@ -86,9 +89,84 @@ class ReactionScreen(ModalScreen):
                     Label(code, classes="reaction-label"),
                     classes="reaction-container",
                 )
+            yield Input(placeholder="search pattern", id="reaction-search")
 
     def action_quit(self):
         self.app.pop_screen()
+
+    def action_next(self):
+        buttons = self.query(EmojiButton)
+        labels = self.query(Label)
+        input = self.query_one("#reaction-search")
+        pattern = input.value
+        ref_code = ""
+        for button in reversed(buttons):
+            ref_code = button.code
+            if ref_code != "":
+                break
+        emoji_info = list(load_emojis(self.app.workspace, ref_code, fltr=pattern))
+        if len(emoji_info) == 0:
+            return
+        for row, button, label in zip_longest(emoji_info, buttons, labels):
+            if row is not None:
+                emoji_symbol = row["emoji"]
+                code = row["short_code"]
+                button.disabled = False
+            else:
+                emoji_symbol = ""
+                code = ""
+                button.disabled = True
+            button.emoji = emoji_symbol
+            button.code = code
+            button.label = emoji_symbol
+            label.update(code)
+
+    def action_prev(self):
+        buttons = self.query(EmojiButton)
+        labels = self.query(Label)
+        input = self.query_one("#reaction-search")
+        pattern = input.value
+        ref_code = ""
+        for button in buttons:
+            ref_code = button.code
+            if ref_code != "":
+                break
+        emoji_info = list(
+            load_emojis(self.app.workspace, ref_code, reverse=True, fltr=pattern)
+        )
+        if len(emoji_info) == 0:
+            return
+        emoji_info.reverse()
+        for row, button, label in zip_longest(emoji_info, buttons, labels):
+            if row is not None:
+                emoji_symbol = row["emoji"]
+                code = row["short_code"]
+                button.disabled = False
+            else:
+                emoji_symbol = ""
+                code = ""
+                button.disabled = True
+            button.emoji = emoji_symbol
+            button.code = code
+            button.label = emoji_symbol
+            label.update(code)
+
+    def on_input_changed(self, event):
+        buttons = self.query(EmojiButton)
+        labels = self.query(Label)
+        value = event.input.value
+        emoji_info = load_emojis(self.app.workspace, "", fltr=value)
+        for row, button, label in zip_longest(emoji_info, buttons, labels):
+            if row is not None:
+                emoji_symbol = row["emoji"]
+                code = row["short_code"]
+            else:
+                emoji_symbol = ""
+                code = ""
+            button.emoji = emoji_symbol
+            button.code = code
+            button.label = emoji_symbol
+            label.update(code)
 
 
 class ImageViewScreen(ModalScreen):
