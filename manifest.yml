@@ -19,11 +19,12 @@ oauth_config:
       - im:write
       - links:read
       - mpim:history
+      - mpim:read
       - mpim:write
       - pins:read
       - reactions:read
       - users:read
-      - mpim:read
+      - reactions:write
 settings:
   event_subscriptions:
     user_events:

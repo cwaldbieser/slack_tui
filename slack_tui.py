@@ -6,8 +6,8 @@ import json
 import os
 import unicodedata
 from hashlib import md5
-from pathlib import Path
 from itertools import zip_longest
+from pathlib import Path
 
 import emoji
 from PIL import Image
@@ -31,6 +31,7 @@ from slacktui.database import (load_channels, load_emojis, load_file,
 from slacktui.files import get_file_data
 from slacktui.messages import (get_history_for_channel, message_transform,
                                post_message)
+from slacktui.reactions import add_reaction
 from slacktui.text import format_text_item
 
 _REACTION_ALIASES = {
@@ -81,6 +82,7 @@ class ReactionScreen(ModalScreen):
     def compose(self):
         emoji_info = load_emojis(self.app.workspace, "")
         with Vertical(id="reaction-panel"):
+            yield Input(placeholder="search pattern", id="reaction-search")
             for row in list(emoji_info)[:9]:
                 emoji_symbol = row["emoji"]
                 code = row["short_code"]
@@ -89,10 +91,9 @@ class ReactionScreen(ModalScreen):
                     Label(code, classes="reaction-label"),
                     classes="reaction-container",
                 )
-            yield Input(placeholder="search pattern", id="reaction-search")
 
     def action_quit(self):
-        self.app.pop_screen()
+        self.dismiss(None)
 
     def action_next(self):
         buttons = self.query(EmojiButton)
@@ -167,6 +168,11 @@ class ReactionScreen(ModalScreen):
             button.code = code
             button.label = emoji_symbol
             label.update(code)
+
+    def on_button_pressed(self, event):
+        button = event.button
+        code = button.code
+        self.dismiss(code)
 
 
 class ImageViewScreen(ModalScreen):
@@ -329,10 +335,16 @@ class SlackApp(App):
 
     def action_react(self):
         listview = self.query_one("#messages")
-        if listview.index is not None:
-            # listitem = listview.children[listview.index]
-            screen = ReactionScreen()
-            self.push_screen(screen)
+        if listview.index is None:
+            return
+
+        def handle_reaction(code):
+            if code is not None:
+                self.send_reaction(code)
+
+        # listitem = listview.children[listview.index]
+        screen = ReactionScreen()
+        self.push_screen(screen, callback=handle_reaction)
 
     def action_scroll_bottom(self):
         listview = self.query_one("#messages")
@@ -360,6 +372,16 @@ class SlackApp(App):
         print(f"Sending message to channel ID {self.channel_id}: {text}")
         post_message(self.config, self.channel_id, text)
         textarea.clear()
+
+    def send_reaction(self, code):
+        listview = self.query_one("#messages")
+        if listview.index is None:
+            return
+        listitem = listview.children[listview.index]
+        ts = id2ts(listitem.id)
+        channel_id = self.channel_id
+        print(channel_id, ts, code)
+        add_reaction(self.config, channel_id, ts, code)
 
     def populate_channels(self):
         try:
