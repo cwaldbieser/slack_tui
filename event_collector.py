@@ -99,6 +99,7 @@ def handle_reaction_added_events(event):
     print(f"ts:             {ts}")
     print("")
     if item_type == "message":
+        # print(json.dumps(event, indent=4))
         add_reaction(ws, event)
 
 

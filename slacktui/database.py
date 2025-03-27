@@ -284,17 +284,22 @@ def add_reaction(workspace, event):
         reactions = message.setdefault("reactions", [])
         added_reaction = event["reaction"]
         updated = False
+        user = event["user"]
+        users = [user]
         for reaction in reactions:
             name = reaction["name"]
             if name == added_reaction:
                 count = reaction["count"]
                 reaction["count"] = count + 1
+                users = reaction["users"]
+                if user not in users:
+                    users.append(user)
                 updated = True
                 break
         if not updated:
             reaction = {
                 "name": added_reaction,
-                "users": [],
+                "users": users,
                 "count": 1,
             }
             reactions.append(reaction)
