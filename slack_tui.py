@@ -532,13 +532,19 @@ class SlackApp(App):
         reactions = message.get("reactions")
         if reactions is not None:
             symbols = []
+            reaction_names = []
             for reaction in reactions:
                 react_name = reaction["name"]
                 react_count = reaction["count"]
                 emoji_symbol = get_emoji_from_code(react_name)
                 symbols.append(f"{emoji_symbol}x{react_count}")
+                reaction_names.append(react_name)
             react_str = " ".join(symbols)
-            status_components.append(Static(react_str, classes="reactions"))
+            tooltip = f"Reactions: {', '.join(reaction_names)}"
+            reactions_widget = Static(react_str, classes="reactions")
+            reactions_widget.tooltip = tooltip
+            status_components.append(reactions_widget)
+            status_components
         msg_status_bar = Horizontal(
             *status_components,
             classes="msg-status-bar",
