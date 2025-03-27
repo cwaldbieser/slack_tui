@@ -62,6 +62,37 @@ def get_emoji_from_code(code):
     return _REACTION_ALIASES.get(code, code)
 
 
+class ReactionChoiceScreen(ModalScreen):
+
+    BINDINGS = [
+        ("escape", "quit", "Close image viewer"),
+    ]
+
+    short_codes = None
+
+    def compose(self):
+        options = []
+        with Vertical(id="reaction-choice-panel"):
+            for short_code in self.short_codes:
+                symbol = get_emoji_from_code(short_code)
+                options.append((f"{symbol} :{short_code}:", short_code))
+            yield Select(options, id="reaction-select", allow_blank=False)
+            with Horizontal(id="reaction-choice-button-bar"):
+                yield Button("OK", id="react-choice-ok")
+                yield Button("Cancel", id="react-choice-cancel")
+
+    def action_quit(self):
+        self.dismiss(None)
+
+    def on_button_pressed(self, event):
+        if event.control.id == "react-choice-ok":
+            select = self.query_one("#reaction-select")
+            short_code = select.value
+            self.dismiss(short_code)
+        else:
+            self.dismiss(None)
+
+
 class ReactionIndicator(Static):
     reaction_data = None
 
@@ -381,7 +412,15 @@ class SlackApp(App):
         elif code_count == 1:
             self.remove_reaction(short_codes[0])
             return
-        # TODO: Determine reaction to remove.
+
+        def handle_reaction_choice(short_code):
+            if short_code is None:
+                return
+            self.remove_reaction(short_code)
+
+        screen = ReactionChoiceScreen()
+        screen.short_codes = short_codes
+        self.push_screen(screen, callback=handle_reaction_choice)
 
     def action_scroll_bottom(self):
         listview = self.query_one("#messages")
@@ -464,6 +503,9 @@ class SlackApp(App):
 
     @on(Select.Changed)
     async def handle_select(self, event):
+        select = event.control
+        if select.id != "channel-select":
+            return
         self.refresh_timer.pause()
         listview = self.query_one("#messages")
         await listview.clear()
