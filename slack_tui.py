@@ -31,8 +31,9 @@ from slacktui.database import (load_channels, load_emojis, load_file,
 from slacktui.files import get_file_data
 from slacktui.messages import (get_history_for_channel, message_transform,
                                post_message)
-from slacktui.reactions import add_reaction
+from slacktui.reactions import add_reaction, remove_reaction
 from slacktui.text import format_text_item
+from slacktui.user import get_authenticated_user
 
 _REACTION_ALIASES = {
     "+1": "thumbs_up",
@@ -59,6 +60,14 @@ def get_emoji_from_code(code):
     except KeyError:
         pass
     return _REACTION_ALIASES.get(code, code)
+
+
+class ReactionIndicator(Static):
+    reaction_data = None
+
+    def __init__(self, *args, reaction_data=None, **kwds):
+        super().__init__(*args, **kwds)
+        self.reaction_data = reaction_data
 
 
 class EmojiButton(Button):
@@ -281,6 +290,7 @@ class SlackApp(App):
         ("shift+enter", "send_message", "Send message"),
         ("shift+down", "scroll_bottom", "Scroll to bottom"),
         ("r", "react", "React to message"),
+        ("R", "remove_reaction", "Remove a reaction."),
     ]
     image_types = frozenset(["image/jpeg", "image/png", "image/gif"])
     history_sync_days = 7
@@ -294,6 +304,7 @@ class SlackApp(App):
         """
         Create child widgets for the app.
         """
+        self.authenticated_user_id = get_authenticated_user(self.config)["user_id"]
         channel_map = {}
         for id, name, user_id, read in load_channels(self.workspace):
             channel_map[name] = id
@@ -346,6 +357,32 @@ class SlackApp(App):
         screen = ReactionScreen()
         self.push_screen(screen, callback=handle_reaction)
 
+    def action_remove_reaction(self):
+        listview = self.query_one("#messages")
+        if listview.index is None:
+            return
+        children = listview.children
+        if len(children) == 0:
+            return
+        listitem = children[listview.index]
+        try:
+            reaction_indicators = listitem.query_one(ReactionIndicator)
+        except NoMatches:
+            return
+        reaction_data = reaction_indicators.reaction_data
+        print(f"Reaction codes that could be removed: {reaction_data}")
+        short_codes = [
+            r["name"] for r in reaction_data if self.authenticated_user_id in r["users"]
+        ]
+        print(f"short_codes of removable reactions: {short_codes}")
+        code_count = len(short_codes)
+        if code_count == 0:
+            return
+        elif code_count == 1:
+            self.remove_reaction(short_codes[0])
+            return
+        # TODO: Determine reaction to remove.
+
     def action_scroll_bottom(self):
         listview = self.query_one("#messages")
         children = listview.children
@@ -380,8 +417,17 @@ class SlackApp(App):
         listitem = listview.children[listview.index]
         ts = id2ts(listitem.id)
         channel_id = self.channel_id
-        print(channel_id, ts, code)
         add_reaction(self.config, channel_id, ts, code)
+
+    def remove_reaction(self, code):
+        listview = self.query_one("#messages")
+        if listview.index is None:
+            return
+        listitem = listview.children[listview.index]
+        ts = id2ts(listitem.id)
+        channel_id = self.channel_id
+        print(channel_id, ts, code)
+        remove_reaction(self.config, channel_id, ts, code)
 
     def populate_channels(self):
         try:
@@ -541,7 +587,9 @@ class SlackApp(App):
                 reaction_names.append(react_name)
             react_str = " ".join(symbols)
             tooltip = f"Reactions: {', '.join(reaction_names)}"
-            reactions_widget = Static(react_str, classes="reactions")
+            reactions_widget = ReactionIndicator(
+                react_str, reaction_data=reactions, classes="reactions"
+            )
             reactions_widget.tooltip = tooltip
             status_components.append(reactions_widget)
             status_components

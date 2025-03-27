@@ -17,3 +17,20 @@ def query_users(config):
         raise
     for user in users:
         yield user
+
+
+def get_authenticated_user(config):
+    """
+    Gets the authenticated user's identity.
+    """
+    url = "https://slack.com/api/auth.test"
+    user_token = config["oauth"]["user_token"]
+    headers = {"Authorization": f"Bearer {user_token}"}
+    response = httpx.get(url, headers=headers)
+    if response.status_code != 200:
+        print(
+            f"Received HTTP status {response.status_code} while trying to"
+            " fetch the authenticated user's identity record."
+        )
+    json_response = response.json()
+    return json_response
