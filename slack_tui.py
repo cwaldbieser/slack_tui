@@ -505,6 +505,7 @@ class SlackApp(App):
     async def refresh_messages_ui(self, messages):
         listview = self.query_one("#messages")
         orig_index = listview.index
+        listview.index = None
         list_items = list(listview.children)
         # if orig_index is None or orig_index == len(list_items) - 1:
         #     self.app.set_timer(0.5, self.action_scroll_bottom)
@@ -551,17 +552,19 @@ class SlackApp(App):
             # Compare to digest of list item message
             pos, stored_digest = list_item_id_map[shared_id]
             if computed_digest != stored_digest:
-                print("DIFF!!!")
-                print(
-                    f"stored digest: {stored_digest}\ncomputed digest: {computed_digest}"
-                )
-                print(f"DB message:\n{json.dumps(message)}")
+                # print("DIFF!!!")
+                # print(
+                #     f"stored digest: {stored_digest}\ncomputed digest: {computed_digest}"
+                # )
+                # print(f"DB message:\n{json.dumps(message)}")
                 # Insert new message and remove old message
                 msg_list_item = self.create_message_list_item(message)
                 await listview.pop(pos)
                 await listview.insert(pos, [msg_list_item])
         if orig_index is None or orig_index == len(list_items) - 1:
             self.action_scroll_bottom()
+        else:
+            listview.index = orig_index
 
     def create_message_list_item(self, message):
         ts = message["ts"]
