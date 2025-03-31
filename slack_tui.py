@@ -328,7 +328,6 @@ class SlackApp(App):
     refresh_timer = None
     workspace = os.environ["SLACK_WORKSPACE"]
     config = None
-    channel_map = None
     channel_id = None
 
     def compose(self) -> ComposeResult:
@@ -336,10 +335,7 @@ class SlackApp(App):
         Create child widgets for the app.
         """
         self.authenticated_user_id = get_authenticated_user(self.config)["user_id"]
-        channel_map = {}
-        for id, name, user_id, read in load_channels(self.workspace):
-            channel_map[name] = id
-        self.channel_map = channel_map
+        options = self.get_channel_options()
         user_map = {}
         for user_info in load_users(self.workspace):
             user_id = user_info["id"]
@@ -354,9 +350,7 @@ class SlackApp(App):
                     "Unread Only", id="unread-checkbox", classes="unread-toggle"
                 )
                 yield Checkbox("DMs", id="dm-checkbox", classes="dm-toggle")
-                yield Select.from_values(
-                    channel_map.keys(), id="channel-select", type_to_search=True
-                )
+                yield Select(options, id="channel-select")
             yield ListView(id="messages")
             yield TextArea(id="composer")
         yield Footer()
@@ -478,9 +472,17 @@ class SlackApp(App):
         curr_value = channel_select.value
         dm_checkbox = self.query_one("#dm-checkbox")
         unread_checkbox = self.query_one("#unread-checkbox")
-        channel_map = {}
         is_dm = dm_checkbox.value
         unread_only = unread_checkbox.value
+        options = self.get_channel_options(
+            is_dm=is_dm, unread_only=unread_only, curr_value=curr_value
+        )
+        if options == channel_select._options[1:]:
+            return
+        channel_select.set_options(options)
+
+    def get_channel_options(self, is_dm=False, unread_only=False, curr_value=None):
+        options = []
         for channel_id, name, user_id, read in load_channels(
             self.workspace, load_dms=is_dm
         ):
@@ -488,14 +490,14 @@ class SlackApp(App):
             if is_dm:
                 username, display_name = self.user_map[user_id]
                 name = display_name
-            if unread_only and read and (name != curr_value):
+            if unread_only and read and (channel_id != curr_value):
                 continue
-            channel_map[name] = channel_id
-        self.channel_map = channel_map
-        options = [(key, key) for key in channel_map.keys()]
-        if options == channel_select._options[1:]:
-            return
-        channel_select.set_options(options)
+            if (not read) and channel_id != curr_value:
+                option = (f"[bold][i]{name}[/i][/bold]", channel_id)
+            else:
+                option = (name, channel_id)
+            options.append(option)
+        return options
 
     @on(Checkbox.Changed)
     def handle_checkbox_changed(self, event):
@@ -512,7 +514,7 @@ class SlackApp(App):
         if event.value == Select.BLANK:
             self.channel_id = None
             return
-        self.channel_id = self.channel_map[event.value]
+        self.channel_id = select.value
         mark_channel_read(self.workspace, self.channel_id)
         messages = [
             message_transform(json.loads(m["json_blob"]))
