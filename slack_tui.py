@@ -329,6 +329,7 @@ class SlackApp(App):
     workspace = os.environ["SLACK_WORKSPACE"]
     config = None
     channel_id = None
+    freeze_channel = False
 
     def compose(self) -> ComposeResult:
         """
@@ -462,7 +463,7 @@ class SlackApp(App):
         print(channel_id, ts, code)
         remove_reaction(self.config, channel_id, ts, code)
 
-    def populate_channels(self):
+    async def populate_channels(self):
         try:
             channel_select = self.query_one("#channel-select")
         except NoMatches:
@@ -470,6 +471,7 @@ class SlackApp(App):
         if channel_select.expanded:
             return
         curr_value = channel_select.value
+        print(f"curr_value: '{curr_value}'")
         dm_checkbox = self.query_one("#dm-checkbox")
         unread_checkbox = self.query_one("#unread-checkbox")
         is_dm = dm_checkbox.value
@@ -479,7 +481,17 @@ class SlackApp(App):
         )
         if options == channel_select._options[1:]:
             return
-        channel_select.set_options(options)
+        with channel_select.prevent(Select.Changed):
+            self.freeze_channel = True
+            channel_select.set_options(options)
+        await self.complete_populate_channel()
+
+    async def complete_populate_channel(self):
+        print(f"Setting value: '{self.channel_id}'")
+        channel_select = self.query_one("#channel-select")
+        with channel_select.prevent(Select.Changed):
+            channel_select.value = self.channel_id
+            self.freeze_channel = False
 
     def get_channel_options(self, is_dm=False, unread_only=False, curr_value=None):
         options = []
@@ -507,6 +519,8 @@ class SlackApp(App):
     async def handle_select(self, event):
         select = event.control
         if select.id != "channel-select":
+            return
+        if self.freeze_channel:
             return
         self.refresh_timer.pause()
         listview = self.query_one("#messages")
