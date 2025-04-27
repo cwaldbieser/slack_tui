@@ -41,7 +41,6 @@ _REACTION_ALIASES = {
 
 
 def get_emoji_from_code(code):
-    global _REACTION_ALIASES
     if len(code) == 0:
         return code
     if code[0] != ":":
@@ -300,7 +299,7 @@ class MessageListItem(ListItem):
 
 
 def ts2id(ts):
-    widget_id = f"msg-{ts.replace(".", "-")}"
+    widget_id = f"msg-{ts.replace('.', '-')}"
     return widget_id
 
 
